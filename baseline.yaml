@@ -4,6 +4,8 @@ result_directory: ./result
 result_file: result.csv
 
 max_fpr : 0.1
+latent_size: 768
+NF_layers: 100
 
 feature:
   n_mels: 64

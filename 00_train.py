@@ -25,11 +25,12 @@ from tqdm import tqdm
 # original lib
 import common as com
 import random
-from Feature_Extractor import load_extractor
+from AST_Model import load_extractor
 from Dataset import AudioDataset
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
+from RealNVP import BuildFlow
 ########################################################################
 
 ########################################################################
@@ -94,7 +95,8 @@ if __name__ == "__main__":
     visualizer = visualizer()
 
     # training device
-    device = torch.device('cuda')
+    device_0 = torch.device('cuda:0')
+    device_1 = torch.device('cuda:1')
 
     # training info
     epochs = int(param["fit"]["epochs"])
@@ -171,55 +173,66 @@ if __name__ == "__main__":
  
             
             extractor = load_extractor()
-            extractor = extractor.to(device=device, dtype=torch.float32)
+            extractor = nn.DataParallel(extractor, output_device=device_1)
+            extractor = extractor.to(device=device_0)
             extractor.eval()
 
-            # flow_model = 
-            # set up training info
-            # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+            flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
+            flow_model = nn.DataParallel(flow_model, output_device=device_0)
+            flow_model = flow_model.to(device=device_1)
 
-            #flow_model = None
+            # set up training info
+            optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-6)
 
             for epoch in range(1, epochs+1):
                 train_loss = 0.0
                 val_loss = 0.0
                 print("Epoch: {}".format(epoch))
 
+                flow_model.train()
 
                 for batch in tqdm(train_dl):
-                    #optimizer.zero_grad()
-                    batch = batch.to(device)
-                    feature = extractor(batch)
 
-                    #loss = loss_function(batch)
-                    #loss.backward()
-                    #optimizer.step()
-                    #train_loss += loss.item()
+                    optimizer.zero_grad()
+                    feature = extractor(batch)
+                    loss = flow_model(feature)
+
+                    # Do backprop and optimizer step
+                    if ~(torch.isnan(loss) | torch.isinf(loss)):
+                        loss.backward()
+                        optimizer.step()
+
+                    train_loss += loss.item()
 
                     del batch
-                #train_loss /= len(train_dl)
-                #train_loss_list.append(train_loss)
+                
+                train_loss /= len(train_dl)
+                train_loss_list.append(train_loss)
 
-                #flow_model.eval()
+                flow_model.eval()
                 
                 with torch.no_grad():
                     for batch in tqdm(val_dl):
-                        batch = batch.to(device)
+                        
                         feature = extractor(batch)
+                        loss = flow_model(feature)
+
                         #loss = loss_function(batch)
                         #val_loss += loss.item()
                         del batch
-                #val_loss /= len(val_dl)
-                #val_loss_list.append(val_loss)
+
+                val_loss /= len(val_dl)
+                val_loss_list.append(val_loss)
 
                 print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
             
             visualizer.loss_plot(train_loss_list, val_loss_list)
             visualizer.save_figure(history_img)
-            #torch.save(flow_model.state_dict(), model_file_path)
+            
+            torch.save(flow_model.state_dict(), model_file_path)
             com.logger.info("save_model -> {}".format(model_file_path))
 
-            del train_dataset, val_dataset, train_dl, val_dl, extractor
+            del train_dataset, val_dataset, train_dl, val_dl
             
             gc.collect()
 
