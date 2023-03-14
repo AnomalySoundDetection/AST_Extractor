@@ -1,4 +1,4 @@
-dev_directory : /mnt/Directory/dev_data
+dev_directory : /mnt/HDD2/ASD_team/dev_data
 model_directory: ./model
 result_directory: ./result
 result_file: result.csv
