@@ -18,9 +18,9 @@ import itertools
 
 # additional
 import numpy
-import librosa
-import librosa.core
-import librosa.feature
+#import librosa
+#import librosa.core
+#import librosa.feature
 import yaml
 
 ########################################################################
