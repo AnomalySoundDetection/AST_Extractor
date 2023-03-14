@@ -7,7 +7,6 @@ max_fpr : 0.1
 
 feature:
   n_mels: 64
-  sample_rate: 32000
   n_fft: 1024
   hop_length: 256
   fmin: 50

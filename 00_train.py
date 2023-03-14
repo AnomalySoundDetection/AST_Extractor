@@ -99,7 +99,21 @@ if __name__ == "__main__":
     # training info
     epochs = int(param["fit"]["epochs"])
     batch_size = int(param["fit"]["batch_size"])
+
+    # 11/30/22: I decouple the dataset and the following hyper-parameters to make it easier to adapt to new datasets
+    # dataset spectrogram mean and std, used to normalize the input
+    # norm_stats = {'audioset':[-4.2677393, 4.5689974], 'esc50':[-6.6268077, 5.358466], 'speechcommands':[-6.845978, 5.5654526]}
+    # target_length = {'audioset':1024, 'esc50':512, 'speechcommands':128}
+    # # if add noise for data augmentation, only use for speech commands
+    # noise = {'audioset': False, 'esc50': False, 'speechcommands':True}
+
+    # audio config
+    audio_conf = {'num_mel_bins': 128, 'target_length': 1024, 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
     
+    val_audio_conf = {'num_mel_bins': 128, 'target_length': 1024, 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+                        'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+
     # load base_directory list
     machine_list = com.get_machine_list(param["dev_directory"])
     print("=====================================")
@@ -112,15 +126,6 @@ if __name__ == "__main__":
         print("[{idx}/{total}] {machine}".format(machine=machine, idx=idx+1, total=len(machine_list)))
         
         root_path = param["dev_directory"] + "/" + machine
-        
-        model_file_path = "{model}/model_{machine}.pt".format(model=param["model_directory"],
-                                                                     machine=machine)
-        history_img = "{model}/history_{machine}.png".format(model=param["model_directory"],
-                                                                  machine=machine)
-
-        if os.path.exists(model_file_path):
-            com.logger.info("model exists")
-            continue
 
         data_list = com.select_dirs(param=param, machine=machine)
         id_list = com.get_machine_id_list(target_dir=root_path, dir_type="train")
@@ -142,49 +147,44 @@ if __name__ == "__main__":
             print("\n----------------")
             print("Generating Dataset of Current ID: ", _id)
 
-            train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, sample_rate=param["feature"]["sample_rate"])
-            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, sample_rate=param["feature"]["sample_rate"])
+            train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, audio_conf=audio_conf)
+            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, audio_conf=val_audio_conf)
             
             train_dl = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
             val_dl = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
 
             print("------ DONE -------")
             
-            
+            model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
+            history_img = "{model}/history_{machine}_{_id}.png".format(model=param["model_directory"], machine=machine, _id=_id)
+
+            if os.path.exists(model_file_path):
+                com.logger.info("model exists")
+                continue
+
             # train model
             print("\n----------------")
             print("Start Model Training...")
 
             train_loss_list = []
             val_loss_list = []
-
-
-            # TODO: loss function and optimizer update
-            #loss_function =     
-            #optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-
-            extractor = load_extractor(sample_rate=param["feature"]["sample_rate"],
-                                       window_size=param["feature"]["n_fft"],
-                                       hop_size=param["feature"]["hop_length"],
-                                       mel_bins=param["feature"]["n_mels"],
-                                       fmin=param["feature"]["fmin"],
-                                       fmax=param["feature"]["fmax"])
+ 
             
-
+            extractor = load_extractor()
             extractor = extractor.to(device=device, dtype=torch.float32)
             extractor.eval()
 
+            # flow_model = 
+            # set up training info
+            # optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
+
             #flow_model = None
 
-            for epoch in range(1, 2):
+            for epoch in range(1, epochs+1):
                 train_loss = 0.0
-                eval_loss = 0.0
+                val_loss = 0.0
                 print("Epoch: {}".format(epoch))
 
-                #TODO: Update optimizer and loss function
-                #TODO: Update flow model after finishing model setup
-
-                #flow_model.train()
 
                 for batch in tqdm(train_dl):
                     #optimizer.zero_grad()
@@ -211,6 +211,8 @@ if __name__ == "__main__":
                         del batch
                 #val_loss /= len(val_dl)
                 #val_loss_list.append(val_loss)
+
+                print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
             
             visualizer.loss_plot(train_loss_list, val_loss_list)
             visualizer.save_figure(history_img)
