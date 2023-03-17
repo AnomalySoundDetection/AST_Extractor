@@ -30,7 +30,7 @@ from Dataset import AudioDataset
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from RealNVP import BuildFlow
+from Flow_Model import BuildFlow
 ########################################################################
 
 ########################################################################
@@ -110,10 +110,10 @@ if __name__ == "__main__":
     # noise = {'audioset': False, 'esc50': False, 'speechcommands':True}
 
     # audio config
-    audio_conf = {'num_mel_bins': 128, 'target_length': 1024, 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+    audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
                     'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
     
-    val_audio_conf = {'num_mel_bins': 128, 'target_length': 1024, 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+    val_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
                         'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
 
     # load base_directory list
@@ -172,17 +172,17 @@ if __name__ == "__main__":
             val_loss_list = []
  
             
-            extractor = load_extractor()
-            extractor = nn.DataParallel(extractor, output_device=device_1)
+            extractor = load_extractor(int(param['tdim']))
+            extractor = nn.DataParallel(extractor, device_ids=[0, 1])
             extractor = extractor.to(device=device_0)
             extractor.eval()
 
             flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
-            flow_model = nn.DataParallel(flow_model, output_device=device_0)
+            flow_model = nn.DataParallel(flow_model, device_ids=[1, 0], output_device=device_0)
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
-            optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-6)
+            optimizer = torch.optim.Adam(flow_model.parameters(), lr=5e-4)
 
             for epoch in range(1, epochs+1):
                 train_loss = 0.0
@@ -194,14 +194,21 @@ if __name__ == "__main__":
                 for batch in tqdm(train_dl):
 
                     optimizer.zero_grad()
+
                     feature = extractor(batch)
+                    feature = feature.unsqueeze(2)
+                    feature = feature.unsqueeze(3)
+                    
+                    #feature = feature.to(device_1)
                     loss = flow_model(feature)
 
                     # Do backprop and optimizer step
+                    loss = torch.sum(loss)
+                
                     if ~(torch.isnan(loss) | torch.isinf(loss)):
                         loss.backward()
                         optimizer.step()
-
+                    
                     train_loss += loss.item()
 
                     del batch
@@ -215,10 +222,14 @@ if __name__ == "__main__":
                     for batch in tqdm(val_dl):
                         
                         feature = extractor(batch)
-                        loss = flow_model(feature)
+                        feature = feature.unsqueeze(2)
+                        feature = feature.unsqueeze(3)
 
+                        loss = flow_model(feature)
+                        loss = torch.sum(loss)
                         #loss = loss_function(batch)
-                        #val_loss += loss.item()
+                        
+                        val_loss += loss.item()
                         del batch
 
                 val_loss /= len(val_dl)

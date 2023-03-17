@@ -74,10 +74,10 @@ class AudioDataset(Dataset):
         
         """
         sample rate: 16k
-        frame length: 25ms (default)
-        shift length: 10ms
+        frame length: 50ms (default)
+        shift length: 20ms
         """
-        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False,
+        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False, frame_length=25,
                                                   window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=10)
         
         n_frames = fbank.shape[0]
