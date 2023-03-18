@@ -19,7 +19,7 @@ import gc
 ########################################################################
 # import additional python-library
 ########################################################################
-import numpy
+import numpy as np
 # from import
 from tqdm import tqdm
 # original lib
@@ -149,8 +149,10 @@ if __name__ == "__main__":
             print("\n----------------")
             print("Generating Dataset of Current ID: ", _id)
 
-            train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, audio_conf=audio_conf)
-            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, audio_conf=val_audio_conf)
+            train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                         shift_length=int(param['shift_length']), audio_conf=audio_conf)
+            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                         shift_length=int(param['shift_length']),audio_conf=val_audio_conf)
             
             train_dl = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
             val_dl = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
@@ -158,6 +160,7 @@ if __name__ == "__main__":
             print("------ DONE -------")
             
             model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
+            checkpoint_path = "{model}/checkpoint_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
             history_img = "{model}/history_{machine}_{_id}.png".format(model=param["model_directory"], machine=machine, _id=_id)
 
             if os.path.exists(model_file_path):
@@ -170,7 +173,6 @@ if __name__ == "__main__":
 
             train_loss_list = []
             val_loss_list = []
- 
             
             extractor = load_extractor(int(param['tdim']))
             extractor = nn.DataParallel(extractor, device_ids=[0, 1])
@@ -178,64 +180,86 @@ if __name__ == "__main__":
             extractor.eval()
 
             flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
-            flow_model = nn.DataParallel(flow_model, device_ids=[1, 0], output_device=device_0)
+            flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
             optimizer = torch.optim.Adam(flow_model.parameters(), lr=5e-4)
 
+            
             for epoch in range(1, epochs+1):
-                train_loss = 0.0
-                val_loss = 0.0
-                print("Epoch: {}".format(epoch))
+                try:
+                    train_loss = 0.0
+                    val_loss = 0.0
+                    print("Epoch: {}".format(epoch))
 
-                flow_model.train()
+                    flow_model.train()
 
-                for batch in tqdm(train_dl):
+                    for batch in tqdm(train_dl):
 
-                    optimizer.zero_grad()
+                        optimizer.zero_grad()
 
-                    feature = extractor(batch)
-                    feature = feature.unsqueeze(2)
-                    feature = feature.unsqueeze(3)
-                    
-                    #feature = feature.to(device_1)
-                    loss = flow_model(feature)
-
-                    # Do backprop and optimizer step
-                    loss = torch.sum(loss)
-                
-                    if ~(torch.isnan(loss) | torch.isinf(loss)):
-                        loss.backward()
-                        optimizer.step()
-                    
-                    train_loss += loss.item()
-
-                    del batch
-                
-                train_loss /= len(train_dl)
-                train_loss_list.append(train_loss)
-
-                flow_model.eval()
-                
-                with torch.no_grad():
-                    for batch in tqdm(val_dl):
-                        
                         feature = extractor(batch)
                         feature = feature.unsqueeze(2)
                         feature = feature.unsqueeze(3)
-
-                        loss = flow_model(feature)
-                        loss = torch.sum(loss)
-                        #loss = loss_function(batch)
                         
-                        val_loss += loss.item()
+                        #feature = feature.to(device_1)
+                        loss = flow_model(feature)
+
+                        #loss = torch.sum(loss)
+                        #loss = loss.unsqueeze(0)
+                        loss = torch.mean(loss)
+
+                        # Do backprop and optimizer step
+                    
+                        if ~(torch.isnan(loss) | torch.isinf(loss)):
+                            loss.backward()
+                            optimizer.step()
+                        
+                        train_loss += loss.item()
+
                         del batch
 
-                val_loss /= len(val_dl)
-                val_loss_list.append(val_loss)
+                        gc.collect()
+                        torch.cuda.empty_cache()
+                    
+                    train_loss /= len(train_dl)
+                    train_loss_list.append(train_loss)
 
-                print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
+                    flow_model.eval()
+                    
+                    with torch.no_grad():
+                        for batch in tqdm(val_dl):
+                            
+                            feature = extractor(batch)
+                            feature = feature.unsqueeze(2)
+                            feature = feature.unsqueeze(3)
+
+                            loss = flow_model(feature)
+
+                            loss = torch.mean(loss)
+                            #loss = loss.unsqueeze(0)
+                            #loss = torch.mean(loss)
+                            
+                            val_loss += loss.item()
+                            del batch
+
+                            gc.collect()
+                            torch.cuda.empty_cache()
+
+                    val_loss /= len(val_dl)
+                    val_loss_list.append(val_loss)
+
+                    print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
+
+                    gc.collect()
+                    torch.cuda.empty_cache()
+            
+                except:
+                    print("Error during training, stop at epoch {ep}".format(ep=epoch))
+                    torch.save(flow_model.state_dict(), checkpoint_path)
+                    com.logger.info("save checkpoint -> {}".format(checkpoint_path))
+                    exit(1)
             
             visualizer.loss_plot(train_loss_list, val_loss_list)
             visualizer.save_figure(history_img)
@@ -243,7 +267,9 @@ if __name__ == "__main__":
             torch.save(flow_model.state_dict(), model_file_path)
             com.logger.info("save_model -> {}".format(model_file_path))
 
-            del train_dataset, val_dataset, train_dl, val_dl
+            del train_dataset, val_dataset, train_dl, val_dl, flow_model
+
+            torch.cuda.empty_cache()
             
             gc.collect()
 

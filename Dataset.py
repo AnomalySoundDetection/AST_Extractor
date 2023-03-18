@@ -9,9 +9,13 @@ def load_audio(audio_path, sample_rate):
     return audio_data
 
 class AudioDataset(Dataset):
-    def __init__(self, data, _id, root, audio_conf):
+    def __init__(self, data, _id, root, audio_conf, frame_length, shift_length, train=True):
         self.data = [sample for sample in data if _id in sample]
         self.root = root
+        self.train = train
+
+        self.frame_length = frame_length
+        self.shift_length = shift_length
 
         self.audio_conf = audio_conf
         """
@@ -77,8 +81,8 @@ class AudioDataset(Dataset):
         frame length: 50ms (default)
         shift length: 20ms
         """
-        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False, frame_length=25,
-                                                  window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=10)
+        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False, frame_length=self.frame_length,
+                                                  window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=self.shift_length)
         
         n_frames = fbank.shape[0]
 
@@ -169,7 +173,10 @@ class AudioDataset(Dataset):
 
         # mix_ratio = min(mix_lambda, 1-mix_lambda) / max(mix_lambda, 1-mix_lambda)
 
-        return fbank
+        if self.train:
+            return fbank
+        else:
+            return fbank, 1 if "anomaly" in file_path else 0
     
     def __len__(self):
         return len(self.data)

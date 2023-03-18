@@ -22,22 +22,26 @@ import torch
 # import additional python-library
 ########################################################################
 import numpy as np
-#import cupy as cp
 # from import
 from tqdm import tqdm
-from sklearn import metrics
 # original lib
 import common as com
-from pytorch_model import *
-from torchsummary import summary
+import random
+from AST_Model import load_extractor
+from Dataset import AudioDataset
+import torch
+import torch.nn as nn
 from torch.utils.data import DataLoader
+from Flow_Model import BuildFlow
+from sklearn import metrics
+import copy
 ########################################################################
 
 
 ########################################################################
 # load parameter.yaml
 ########################################################################
-param = com.yaml_load()
+param = com.load_yaml()
 #######################################################################
 
 
@@ -75,79 +79,6 @@ def get_machine_id_list_for_test(target_dir,
     return machine_id_list
 
 
-def test_file_list_generator(target_dir,
-                             id_name,
-                             dir_name="test",
-                             prefix_normal="normal",
-                             prefix_anomaly="anomaly",
-                             ext="wav"):
-    """
-    target_dir : str
-        base directory path of the dev_data or eval_data
-    id_name : str
-        id of wav file in <<test_dir_name>> directory
-    dir_name : str (default="test")
-        directory containing test data
-    prefix_normal : str (default="normal")
-        normal directory name
-    prefix_anomaly : str (default="anomaly")
-        anomaly directory name
-    ext : str (default="wav")
-        file extension of audio files
-
-    return :
-        if the mode is "development":
-            test_files : list [ str ]
-                file list for test
-            test_labels : list [ boolean ]
-                label info. list for test
-                * normal/anomaly = 0/1
-        if the mode is "evaluation":
-            test_files : list [ str ]
-                file list for test
-    """
-    com.logger.info("target_dir : {}".format(target_dir+"_"+id_name))
-
-    # development
-    if mode:
-        normal_files = sorted(
-            glob.glob("{dir}/{dir_name}/{prefix_normal}_{id_name}*.{ext}".format(dir=target_dir,
-                                                                                 dir_name=dir_name,
-                                                                                 prefix_normal=prefix_normal,
-                                                                                 id_name=id_name,
-                                                                                 ext=ext)))
-        normal_labels = np.zeros(len(normal_files))
-        anomaly_files = sorted(
-            glob.glob("{dir}/{dir_name}/{prefix_anomaly}_{id_name}*.{ext}".format(dir=target_dir,
-                                                                                  dir_name=dir_name,
-                                                                                  prefix_anomaly=prefix_anomaly,
-                                                                                  id_name=id_name,
-                                                                                  ext=ext)))
-        anomaly_labels = np.ones(len(anomaly_files))
-        files = np.concatenate((normal_files, anomaly_files), axis=0)
-        labels = np.concatenate((normal_labels, anomaly_labels), axis=0)
-        com.logger.info("test_file  num : {num}".format(num=len(files)))
-        if len(files) == 0:
-            com.logger.exception("no_wav_file!!")
-        print("\n========================================")
-
-    # evaluation
-    else:
-        files = sorted(
-            glob.glob("{dir}/{dir_name}/*{id_name}*.{ext}".format(dir=target_dir,
-                                                                  dir_name=dir_name,
-                                                                  id_name=id_name,
-                                                                  ext=ext)))
-        labels = None
-        com.logger.info("test_file  num : {num}".format(num=len(files)))
-        if len(files) == 0:
-            com.logger.exception("no_wav_file!!")
-        print("\n=========================================")
-
-    return files, labels
-########################################################################
-
-
 ########################################################################
 # main 01_test.py
 ########################################################################
@@ -160,119 +91,146 @@ if __name__ == "__main__":
         sys.exit(-1)
 
     # make output result directory
-    os.makedirs(param["result_directory"]["baseline"], exist_ok=True)
+    os.makedirs(param["result_directory"], exist_ok=True)
 
     # load base directory
-    dirs = com.select_dirs(param=param, mode=mode)
+    # training device
+    device = torch.device('cuda')
+
+    # batch size
+    batch_size = int(param["fit"]["batch_size"])
+
+    # audio config
+    test_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
 
     # initialize lines in csv for AUC and pAUC
     csv_lines = []
 
+    machine_list = com.get_machine_list(param["dev_directory"])
+    print("=====================================")
+    print("Test Machine List: ", machine_list)
+    print("=====================================")
+
     # loop of the base directory
-    for idx, target_dir in enumerate(dirs):
+    for idx, machine in enumerate(machine_list):
         print("\n===========================")
-        print("[{idx}/{total}] {dirname}".format(dirname=target_dir, idx=idx+1, total=len(dirs)))
-        machine_type = os.path.split(target_dir)[1]
-
-        print("============== MODEL LOAD ==============")
-        # set model path
-        '''
-        model_file change to .pt
-        '''
-        model_file = "{model}/model_{machine_type}.pt".format(model=param["model_directory"]["baseline"],
-                                                                machine_type=machine_type)
-
-        # load model file
-        if not os.path.exists(model_file):
-            com.logger.error("{} model not found ".format(machine_type))
-            sys.exit(-1)
-
-        inputDim = param["feature"]["baseline"]["n_mels"] * param["feature"]["baseline"]["frames"]
-        model = Net(inputDim=inputDim)
-        model.load_state_dict(torch.load(model_file))
+        print("[{idx}/{total}] {machine}".format(machine=machine, idx=idx+1, total=len(machine_list)))
         
-        device = torch.device('cuda')
-        model = model.to(device)
+        root_path = param["dev_directory"] + "/" + machine
+
+        data_list = com.select_dirs(param=param, machine=machine, dir_type="test")
+        id_list = com.get_machine_id_list(target_dir=root_path, dir_type="test")
+
+        print("Current Machine: ", machine)
+        print("Machine ID List: ", id_list)
+        
+
+        # inputDim = param["feature"]["baseline"]["n_mels"] * param["feature"]["baseline"]["frames"]
+        # model = Net(inputDim=inputDim)
+        # model.load_state_dict(torch.load(model_file))
+        
+        # device = torch.device('cuda')
+        # model = model.to(device)
         #summary(model.float(), input_size=(inputDim, ))
 
-        if mode:
-            # results by type
-            csv_lines.append([machine_type])
-            csv_lines.append(["id", "AUC", "pAUC"])
-            performance = []
+        for _id in id_list:
+            
+            model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
 
-        machine_id_list = get_machine_id_list_for_test(target_dir)
+            if not os.path.exists(model_file_path):
+                com.logger.error("{machine} {_id} model not found ".format(machine=machine, _id=_id))
+                continue
 
-        for id_str in machine_id_list:
-            # load test file
-            test_files, y_true = test_file_list_generator(target_dir, id_str)
+            print("\n----------------")
+            print("Generating Dataset of Current ID: ", _id)
 
-            # setup anomaly score file path
-            anomaly_score_csv = "{result}/anomaly_score_{machine_type}_{id_str}.csv".format(
-                                                                                     result=param["result_directory"]["baseline"],
-                                                                                     machine_type=machine_type,
-                                                                                     id_str=id_str)
-            anomaly_score_list = []
+            test_dataset = AudioDataset(data=data_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                         shift_length=int(param['shift_length']), audio_conf=test_audio_conf, train=False)
+            
+            test_dl = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False)
 
-            print("\n============== BEGIN TEST FOR A MACHINE ID ==============")
-            y_pred = [0. for k in test_files]
-            for file_idx, file_path in tqdm(enumerate(test_files), total=len(test_files)):
-                #try:
-                data = com.file_to_vector_array(file_path,
-                                                n_mels=param["feature"]["baseline"]["n_mels"],
-                                                frames=param["feature"]["baseline"]["frames"],
-                                                n_fft=param["feature"]["baseline"]["n_fft"],
-                                                hop_length=param["feature"]["baseline"]["hop_length"],
-                                                power=param["feature"]["baseline"]["power"])
+            file_list = test_dataset.data
 
-                '''
-                change: testing
-                '''
-                errors = []
-                model.eval()
-                for i in range(len(data)):
-                    with torch.no_grad():
-                        model.double()
-                        vector = torch.DoubleTensor(data[i]).view(-1, len(data[i]))
-                        vector = vector.to(device)
-                        prediction = model(vector).to(device)
-                        errors.append(torch.mean(np.square(vector.cpu() - prediction.cpu()), dim=1, dtype=torch.float64))
-                        #errors.append(cp.mean(cp.square(vector - prediction), dim=1, dtype=torch.float64))
+            print("------ DONE -------")
 
-                y_pred[file_idx] = np.mean(errors)
-                anomaly_score_list.append([os.path.basename(file_path), y_pred[file_idx]])
-
-                ############################################################################
-                """ errors = numpy.mean(numpy.square(data - model.predict(data)), axis=1)
-                y_pred[file_idx] = numpy.mean(errors)
-                anomaly_score_list.append([os.path.basename(file_path), y_pred[file_idx]]) """
-                ############################################################################
-                """ except:
-                    com.logger.error("file broken!!: {}".format(file_path)) """
-
-            # save anomaly score
-            save_csv(save_file_path=anomaly_score_csv, save_data=anomaly_score_list)
-            com.logger.info("anomaly score result ->  {}".format(anomaly_score_csv))
 
             if mode:
-                # append AUC and pAUC to lists
-                auc = metrics.roc_auc_score(y_true, y_pred)
-                p_auc = metrics.roc_auc_score(y_true, y_pred, max_fpr=param["max_fpr"])
-                csv_lines.append([id_str.split("_", 1)[1], auc, p_auc])
-                performance.append([auc, p_auc])
-                com.logger.info("AUC : {}".format(auc))
-                com.logger.info("pAUC : {}".format(p_auc))
+                # results by type
+                csv_lines.append([machine])
+                csv_lines.append(["id", "AUC", "pAUC"])
+                performance = []
 
-            print("\n============ END OF TEST FOR A MACHINE ID ============")
+            anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result=param["result_directory"],
+                                                                                     machine=machine,
+                                                                                     _id=_id)
+                
+            file_list = test_dataset.data
 
-        if mode:
-            # calculate averages for AUCs and pAUCs
-            averaged_performance = np.mean(np.array(performance, dtype=float), axis=0)
-            csv_lines.append(["Average"] + list(averaged_performance))
-            csv_lines.append([])
+            anomaly_score_record = []
 
-    if mode:
+            print("\n----------------")
+            print("Load Model")
+
+            extractor = load_extractor(int(param['tdim']))
+            extractor = extractor.to(device=device)
+            extractor.eval()
+
+            flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
+            #flow_model = nn.DataParallel(flow_model)
+            flow_model.load_state_dict(torch.load(model_file_path), strict=False)
+            flow_model = flow_model.to(device=device)
+            flow_model.eval()
+
+            print("Finish Loading")
+
+            print("----------------")
+            print("Start Model Testing...")
+
+            anomaly_score_list = [0. for file in file_list]
+            ground_truth_list = [0 for file in file_list]
+
+            with torch.no_grad():
+                for idx, batch_info in enumerate(tqdm(test_dl)):
+                    
+                    batch, ground_truth = batch_info
+
+                    batch = batch.to(device)
+                    feature = extractor(batch)
+
+                    feature = feature.unsqueeze(2)
+                    feature = feature.unsqueeze(3)
+
+                    output_z = flow_model(feature)
+
+                    anomaly_score = -flow_model.q0.log_prob(output_z)
+                    
+                    ground_truth_list.append(ground_truth.item())
+                    anomaly_score_list.append(anomaly_score.item())
+
+                    anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
+
+                if mode:
+                    # append AUC and pAUC to lists
+                    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
+                    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"])
+                    anomaly_score_record.append([_id, auc, p_auc])
+                    #performance.append([auc, p_auc])
+                    com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+                    com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
+
+                    # save anomaly score
+                    save_csv(save_file_path=anomaly_score_csv, save_data=anomaly_score_record)
+                    com.logger.info("anomaly score result ->  {}".format(anomaly_score_csv))
+
+            #if mode:
+                # calculate averages for AUCs and pAUCs
+                #averaged_performance = np.mean(np.array(performance, dtype=float), axis=0)
+                #csv_lines.append(["Average"] + list(averaged_performance))
+                #csv_lines.append([])
+
+    #if mode:
         # output results
-        result_path = "{result}/{file_name}".format(result=param["result_directory"]["baseline"], file_name=param["result_file"])
-        com.logger.info("AUC and pAUC results -> {}".format(result_path))
-        save_csv(save_file_path=result_path, save_data=csv_lines)
+        #result_path = "{result}/{file_name}".format(result=param["result_directory"], file_name=param["result_file"])
+        #com.logger.info("AUC and pAUC results -> {}".format(result_path))
+        #save_csv(save_file_path=result_path, save_data=csv_lines)
