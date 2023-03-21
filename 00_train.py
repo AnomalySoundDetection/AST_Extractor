@@ -102,6 +102,10 @@ if __name__ == "__main__":
     epochs = int(param["fit"]["epochs"])
     batch_size = int(param["fit"]["batch_size"])
 
+    channel = int(param["channel"])
+    latent_size = int(param["latent_size"])
+    layer_num = int(param["NF_layers"])
+
     # 11/30/22: I decouple the dataset and the following hyper-parameters to make it easier to adapt to new datasets
     # dataset spectrogram mean and std, used to normalize the input
     # norm_stats = {'audioset':[-4.2677393, 4.5689974], 'esc50':[-6.6268077, 5.358466], 'speechcommands':[-6.845978, 5.5654526]}
@@ -111,10 +115,10 @@ if __name__ == "__main__":
 
     # audio config
     audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
     
     val_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                        'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                        'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
     # load base_directory list
     machine_list = com.get_machine_list(param["dev_directory"])
@@ -179,18 +183,23 @@ if __name__ == "__main__":
             extractor = extractor.to(device=device_0)
             extractor.eval()
 
-            flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
+            flow_model = BuildFlow(latent_size=latent_size, channel=channel, num_layers=layer_num)
             flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
             optimizer = torch.optim.Adam(flow_model.parameters(), lr=5e-4)
+            #scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=50, gamma=0.1)
 
             
             for epoch in range(1, epochs+1):
                 try:
                     train_loss = 0.0
                     val_loss = 0.0
+
+                    train_log_prob = 0.0
+                    val_log_prob = 0.0
+
                     print("Epoch: {}".format(epoch))
 
                     flow_model.train()
@@ -200,15 +209,17 @@ if __name__ == "__main__":
                         optimizer.zero_grad()
 
                         feature = extractor(batch)
-                        feature = feature.unsqueeze(2)
-                        feature = feature.unsqueeze(3)
+                        feature = torch.reshape(feature, (-1, channel, 4, 4))
+                        #feature = feature.unsqueeze(2)
+                        #feature = feature.unsqueeze(3)
                         
                         #feature = feature.to(device_1)
-                        loss = flow_model(feature)
+                        loss, log_prob = flow_model(feature)
 
                         #loss = torch.sum(loss)
                         #loss = loss.unsqueeze(0)
                         loss = torch.mean(loss)
+                        log_prob = torch.mean(log_prob)
 
                         # Do backprop and optimizer step
                     
@@ -217,6 +228,7 @@ if __name__ == "__main__":
                             optimizer.step()
                         
                         train_loss += loss.item()
+                        train_log_prob += log_prob.item()
 
                         del batch
 
@@ -226,22 +238,29 @@ if __name__ == "__main__":
                     train_loss /= len(train_dl)
                     train_loss_list.append(train_loss)
 
+                    train_log_prob /= len(train_dl)
+
                     flow_model.eval()
                     
                     with torch.no_grad():
                         for batch in tqdm(val_dl):
                             
                             feature = extractor(batch)
-                            feature = feature.unsqueeze(2)
-                            feature = feature.unsqueeze(3)
 
-                            loss = flow_model(feature)
+                            feature = torch.reshape(feature, (-1, channel, 4, 4))
+                            #feature = feature.unsqueeze(2)
+                            #feature = feature.unsqueeze(3)
+
+                            loss, log_prob = flow_model(feature)
 
                             loss = torch.mean(loss)
+                            log_prob = torch.mean(log_prob)
                             #loss = loss.unsqueeze(0)
                             #loss = torch.mean(loss)
                             
                             val_loss += loss.item()
+                            val_log_prob += log_prob.item()
+
                             del batch
 
                             gc.collect()
@@ -250,7 +269,10 @@ if __name__ == "__main__":
                     val_loss /= len(val_dl)
                     val_loss_list.append(val_loss)
 
+                    val_log_prob /= len(val_dl)
+
                     print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
+                    print("Train Log Prob: {train_log_prob}, Validation Log Prob: {val_log_prob}".format(train_log_prob=train_log_prob, val_log_prob=val_log_prob))
 
                     gc.collect()
                     torch.cuda.empty_cache()

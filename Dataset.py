@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset
 import torchaudio
 import torch
+import numpy as np
 
 def load_audio(audio_path, sample_rate):
     audio_data = torchaudio.load(audio_path)
@@ -13,6 +14,13 @@ class AudioDataset(Dataset):
         self.data = [sample for sample in data if _id in sample]
         self.root = root
         self.train = train
+
+        if not self.train:
+            anomaly_data = [data for data in self.data if "anomaly" in data]
+            np.random.shuffle(anomaly_data)
+            anomaly_data = anomaly_data[:-100]
+            self.data = [data for data in self.data if data not in anomaly_data]
+            #print(len(self.data))
 
         self.frame_length = frame_length
         self.shift_length = shift_length
@@ -42,6 +50,7 @@ class AudioDataset(Dataset):
         self.norm_mean = audio_conf['mean']
         self.norm_std = audio_conf['std']
         self.noise = audio_conf['noise']
+        self.sample_rate = audio_conf['sample_rate']
     
     def _wav2fbank(self, filename, filename2=None):
         # no mixup
@@ -81,7 +90,7 @@ class AudioDataset(Dataset):
         frame length: 50ms (default)
         shift length: 20ms
         """
-        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False, frame_length=self.frame_length,
+        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=self.sample_rate, use_energy=False, frame_length=self.frame_length,
                                                   window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=self.shift_length)
         
         n_frames = fbank.shape[0]

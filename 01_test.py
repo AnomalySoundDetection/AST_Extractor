@@ -100,9 +100,13 @@ if __name__ == "__main__":
     # batch size
     batch_size = int(param["fit"]["batch_size"])
 
+    channel = int(param["channel"])
+    latent_size = int(param["latent_size"])
+    layer_num = int(param["NF_layers"])
+
     # audio config
     test_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
     # initialize lines in csv for AUC and pAUC
     csv_lines = []
@@ -176,7 +180,7 @@ if __name__ == "__main__":
             extractor = extractor.to(device=device)
             extractor.eval()
 
-            flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
+            flow_model = BuildFlow(latent_size=latent_size, channel=channel, num_layers=layer_num)
             #flow_model = nn.DataParallel(flow_model)
             flow_model.load_state_dict(torch.load(model_file_path), strict=False)
             flow_model = flow_model.to(device=device)
@@ -197,11 +201,11 @@ if __name__ == "__main__":
 
                     batch = batch.to(device)
                     feature = extractor(batch)
+                    feature = torch.reshape(feature, (-1, channel, 4, 4))
+                    #feature = feature.unsqueeze(2)
+                    #feature = feature.unsqueeze(3)
 
-                    feature = feature.unsqueeze(2)
-                    feature = feature.unsqueeze(3)
-
-                    output_z = flow_model(feature)
+                    output_z = flow_model.x_to_z(feature)
 
                     anomaly_score = -flow_model.q0.log_prob(output_z)
                     
@@ -214,6 +218,7 @@ if __name__ == "__main__":
                     # append AUC and pAUC to lists
                     auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
                     p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"])
+
                     anomaly_score_record.append([_id, auc, p_auc])
                     #performance.append([auc, p_auc])
                     com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))

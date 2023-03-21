@@ -4,11 +4,13 @@ result_directory: ./result
 result_file: result.csv
 
 max_fpr : 0.1
+
 latent_size: 768
-NF_layers: 8
+NF_layers: 4
 tdim: 1024
 frame_length: 25
 shift_length: 10
+channel: 48
 
 feature:
   n_mels: 64

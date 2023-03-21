@@ -40,26 +40,19 @@ class NormalizingFlow(nn.Module):
             z, log_det = self.flows[i].inverse(z)
             log_q += log_det
 
-        z = z.squeeze()
+        z = torch.reshape(z, (len(x), -1))
+        #print(z.shape)
+
+        log_prob = self.q0.log_prob(z)
         log_q += self.q0.log_prob(z) 
-
-        #log_q += self.q0.log_prob(z)
-
-        # if -torch.mean(self.q0.log_prob(z)) <= 1:
-        #     print("x^2 <= 2")
-        # elif -torch.mean(self.q0.log_prob(z)) <= 10:
-        #     print("x^2 <= 20")
-        # elif -torch.mean(self.q0.log_prob(z)) <= 100:
-        #     print("x^2 <= 200")
-        # elif -torch.mean(self.q0.log_prob(z)) <= 300:
-        #     print("x^2 <= 600")
-        # elif -torch.mean(self.q0.log_prob(z)) <= 500:
-        #     print("x^2 <= 1000")
 
         loss = -torch.mean(log_q)
         loss = loss.unsqueeze(0)
 
-        return loss
+        log_prob = torch.mean(log_prob)
+        log_prob = log_prob.unsqueeze(0)
+
+        return loss, log_prob
 
     def log_prob(self, x):
         """
@@ -94,24 +87,28 @@ class NormalizingFlow(nn.Module):
 
     def x_to_z(self, x):
 
-        log_q = torch.zeros(len(x), device=x.device)
+        #log_q = torch.zeros(len(x), device=x.device)
         z = x
         for i in range(len(self.flows) - 1, -1, -1):
             z, log_det = self.flows[i].inverse(z)
-            log_q += log_det
-        log_q += self.q0.log_prob(z)     
-        return z, -log_q
+            #log_q += log_det
+
+        #z = z.squeeze()
+        z = torch.reshape(z, (len(x), -1))
+        #log_q += self.q0.log_prob(z)  
+
+        return z
 
 
-def BuildFlow(latent_size, num_layers):
+def BuildFlow(latent_size, channel, num_layers):
     base = nf.distributions.base.DiagGaussian(latent_size)
 
     flows = []
     for i in range(num_layers):
-        param_map = nf.nets.ConvResidualNet(in_channels=latent_size//2, hidden_channels=64, out_channels=latent_size)
+        param_map = nf.nets.ConvResidualNet(in_channels=channel//2, hidden_channels=channel//2, out_channels=channel, num_blocks=2)
         #param_map = nf.nets.MLP([int(latent_size/2), 1024, 1024, latent_size], init_zeros=True)
         flows.append(nf.flows.AffineCouplingBlock(param_map))
-        flows.append(nf.flows.Permute(latent_size, mode='swap'))
+        flows.append(nf.flows.Permute(channel, mode='swap'))
 
     flow_model = NormalizingFlow(base, flows)
 
