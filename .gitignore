@@ -3,6 +3,7 @@ model/
 dev_data/
 model_idcae/
 runs/
+temp/
 *.pth
 # Byte-compiled / optimized / DLL files
 __pycache__/
