@@ -6,7 +6,7 @@ result_file: result.csv
 max_fpr : 0.1
 
 latent_size: 768
-NF_layers: 4
+NF_layers: 8
 tdim: 1024
 frame_length: 25
 shift_length: 10

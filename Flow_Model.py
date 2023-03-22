@@ -44,6 +44,7 @@ class NormalizingFlow(nn.Module):
         #print(z.shape)
 
         #log_prob = self.q0.log_prob(z)
+        z = z.squeeze()
         log_q += self.q0.log_prob(z) 
 
         loss = -torch.mean(log_q)
@@ -107,6 +108,7 @@ def BuildFlow(latent_size, channel, num_layers):
     for i in range(num_layers):
         param_map = nf.nets.ConvResidualNet(in_channels=channel//2, hidden_channels=channel//2, out_channels=channel, num_blocks=2)
         #param_map = nf.nets.MLP([int(latent_size/2), 1024, 1024, latent_size], init_zeros=True)
+        #param_map = nf.nets.
         flows.append(nf.flows.AffineCouplingBlock(param_map))
         flows.append(nf.flows.Permute(channel, mode='swap'))
 

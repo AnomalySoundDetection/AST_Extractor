@@ -193,12 +193,12 @@ if __name__ == "__main__":
 
             
             for epoch in range(1, epochs+1):
-                #try:
+                try:
                     train_loss = 0.0
                     val_loss = 0.0
 
-                    train_log_prob = 0.0
-                    val_log_prob = 0.0
+                    #train_log_prob = 0.0
+                    #val_log_prob = 0.0
 
                     print("Epoch: {}".format(epoch))
 
@@ -220,7 +220,7 @@ if __name__ == "__main__":
                         #loss = torch.sum(loss)
                         #loss = loss.unsqueeze(0)
                         loss = torch.mean(loss)
-                        log_prob = torch.mean(log_prob)
+                        #log_prob = torch.mean(log_prob)
 
                         # Do backprop and optimizer step
                     
@@ -229,7 +229,7 @@ if __name__ == "__main__":
                             optimizer.step()
                         
                         train_loss += loss.item()
-                        train_log_prob += log_prob.item()
+                        #train_log_prob += log_prob.item()
 
                         del batch
 
@@ -239,7 +239,7 @@ if __name__ == "__main__":
                     train_loss /= len(train_dl)
                     train_loss_list.append(train_loss)
 
-                    train_log_prob /= len(train_dl)
+                    #train_log_prob /= len(train_dl)
 
                     flow_model.eval()
                     
@@ -255,12 +255,12 @@ if __name__ == "__main__":
                             loss = flow_model(feature)
 
                             loss = torch.mean(loss)
-                            log_prob = torch.mean(log_prob)
+                            #log_prob = torch.mean(log_prob)
                             #loss = loss.unsqueeze(0)
                             #loss = torch.mean(loss)
                             
                             val_loss += loss.item()
-                            val_log_prob += log_prob.item()
+                            #val_log_prob += log_prob.item()
 
                             del batch
 
@@ -270,15 +270,15 @@ if __name__ == "__main__":
                     val_loss /= len(val_dl)
                     val_loss_list.append(val_loss)
 
-                    val_log_prob /= len(val_dl)
+                    #val_log_prob /= len(val_dl)
 
                     print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
-                    print("Train Log Prob: {train_log_prob}, Validation Log Prob: {val_log_prob}".format(train_log_prob=train_log_prob, val_log_prob=val_log_prob))
+                    #print("Train Log Prob: {train_log_prob}, Validation Log Prob: {val_log_prob}".format(train_log_prob=train_log_prob, val_log_prob=val_log_prob))
 
                     gc.collect()
                     torch.cuda.empty_cache()
             
-                #except:
+                except:
                     print("Error during training, stop at epoch {ep}".format(ep=epoch))
                     torch.save(flow_model.state_dict(), checkpoint_path)
                     com.logger.info("save checkpoint -> {}".format(checkpoint_path))
