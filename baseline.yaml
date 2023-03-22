@@ -10,7 +10,7 @@ NF_layers: 4
 tdim: 1024
 frame_length: 25
 shift_length: 10
-channel: 48
+channel: 768
 
 feature:
   n_mels: 64

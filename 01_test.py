@@ -201,13 +201,11 @@ if __name__ == "__main__":
 
                     batch = batch.to(device)
                     feature = extractor(batch)
-                    feature = torch.reshape(feature, (-1, channel, 4, 4))
-                    #feature = feature.unsqueeze(2)
-                    #feature = feature.unsqueeze(3)
+                    #feature = torch.reshape(feature, (-1, channel, 4, 4))
+                    feature = feature.unsqueeze(2)
+                    feature = feature.unsqueeze(3)
 
-                    output_z = flow_model.x_to_z(feature)
-
-                    anomaly_score = -flow_model.q0.log_prob(output_z)
+                    anomaly_score = flow_model.forward(feature)
                     
                     ground_truth_list.append(ground_truth.item())
                     anomaly_score_list.append(anomaly_score.item())

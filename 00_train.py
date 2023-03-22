@@ -193,7 +193,7 @@ if __name__ == "__main__":
 
             
             for epoch in range(1, epochs+1):
-                try:
+                #try:
                     train_loss = 0.0
                     val_loss = 0.0
 
@@ -208,13 +208,14 @@ if __name__ == "__main__":
 
                         optimizer.zero_grad()
 
-                        feature = extractor(batch)
-                        feature = torch.reshape(feature, (-1, channel, 4, 4))
-                        #feature = feature.unsqueeze(2)
-                        #feature = feature.unsqueeze(3)
+                        with torch.no_grad():
+                            feature = extractor(batch)
+                            #feature = torch.reshape(feature, (-1, channel, 4, 4))
+                            feature = feature.unsqueeze(2)
+                            feature = feature.unsqueeze(3)
                         
                         #feature = feature.to(device_1)
-                        loss, log_prob = flow_model(feature)
+                        loss = flow_model(feature)
 
                         #loss = torch.sum(loss)
                         #loss = loss.unsqueeze(0)
@@ -245,13 +246,13 @@ if __name__ == "__main__":
                     with torch.no_grad():
                         for batch in tqdm(val_dl):
                             
-                            feature = extractor(batch)
+                            with torch.no_grad():
+                                feature = extractor(batch)
+                                #feature = torch.reshape(feature, (-1, channel, 4, 4))
+                                feature = feature.unsqueeze(2)
+                                feature = feature.unsqueeze(3)
 
-                            feature = torch.reshape(feature, (-1, channel, 4, 4))
-                            #feature = feature.unsqueeze(2)
-                            #feature = feature.unsqueeze(3)
-
-                            loss, log_prob = flow_model(feature)
+                            loss = flow_model(feature)
 
                             loss = torch.mean(loss)
                             log_prob = torch.mean(log_prob)
@@ -277,7 +278,7 @@ if __name__ == "__main__":
                     gc.collect()
                     torch.cuda.empty_cache()
             
-                except:
+                #except:
                     print("Error during training, stop at epoch {ep}".format(ep=epoch))
                     torch.save(flow_model.state_dict(), checkpoint_path)
                     com.logger.info("save checkpoint -> {}".format(checkpoint_path))
