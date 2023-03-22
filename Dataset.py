@@ -17,9 +17,11 @@ class AudioDataset(Dataset):
 
         if not self.train:
             anomaly_data = [data for data in self.data if "anomaly" in data]
-            np.random.shuffle(anomaly_data)
-            anomaly_data = anomaly_data[:-100]
-            self.data = [data for data in self.data if data not in anomaly_data]
+            self.anomaly_num = len(anomaly_data)
+            self.normal_num = len(self.data) - self.anomaly_num
+            #np.random.shuffle(anomaly_data)
+            #anomaly_data = anomaly_data[:-100]
+            #self.data = [data for data in self.data if data not in anomaly_data]
             #print(len(self.data))
 
         self.frame_length = frame_length

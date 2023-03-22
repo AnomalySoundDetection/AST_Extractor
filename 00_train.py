@@ -82,7 +82,7 @@ if __name__ == "__main__":
     # check mode
     # "development": mode == True
     # "evaluation": mode == False
-    mode = com.command_line_chk()
+    mode, machine_type = com.command_line_chk()
     if mode is None:
         sys.exit(-1)
 
@@ -138,6 +138,10 @@ if __name__ == "__main__":
 
         print("Current Machine: ", machine)
         print("Machine ID List: ", id_list)
+
+        if machine != machine_type:
+            print("Skip training on non-match machine_type")
+            continue
 
         train_list = []
         val_list = []
@@ -210,9 +214,9 @@ if __name__ == "__main__":
 
                         with torch.no_grad():
                             feature = extractor(batch)
-                            #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                            feature = feature.unsqueeze(2)
-                            feature = feature.unsqueeze(3)
+                            feature = torch.reshape(feature, (-1, channel, 4, 4))
+                            #feature = feature.unsqueeze(2)
+                            #feature = feature.unsqueeze(3)
                         
                         #feature = feature.to(device_1)
                         loss = flow_model(feature)
@@ -248,9 +252,9 @@ if __name__ == "__main__":
                             
                             with torch.no_grad():
                                 feature = extractor(batch)
-                                #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                                feature = feature.unsqueeze(2)
-                                feature = feature.unsqueeze(3)
+                                feature = torch.reshape(feature, (-1, channel, 4, 4))
+                                #feature = feature.unsqueeze(2)
+                                #feature = feature.unsqueeze(3)
 
                             loss = flow_model(feature)
 

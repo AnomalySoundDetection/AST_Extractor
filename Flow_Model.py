@@ -40,11 +40,11 @@ class NormalizingFlow(nn.Module):
             z, log_det = self.flows[i].inverse(z)
             log_q += log_det
 
-        #z = torch.reshape(z, (len(x), -1))
+        z = torch.reshape(z, (len(x), -1))
         #print(z.shape)
 
         #log_prob = self.q0.log_prob(z)
-        z = z.squeeze()
+        #z = z.squeeze()
         log_q += self.q0.log_prob(z) 
 
         loss = -torch.mean(log_q)

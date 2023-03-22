@@ -60,6 +60,9 @@ def command_line_chk():
     parser.add_argument('-v', '--version', action='store_true', help="show application version")
     parser.add_argument('-e', '--eval', action='store_true', help="run mode Evaluation")
     parser.add_argument('-d', '--dev', action='store_true', help="run mode Development")
+    parser.add_argument('-m', '--machine', type=str, help="machine type")
+    #parser.add_argument('-id', '--id', action='store_true', help="id of machine, for example: id_00")
+
     args = parser.parse_args()
     if args.version:
         print("===============================")
@@ -74,7 +77,7 @@ def command_line_chk():
         flag = None
         print("incorrect argument")
         print("please set option argument '--dev' or '--eval'")
-    return flag
+    return flag, args.machine
 
 
 ########################################################################
