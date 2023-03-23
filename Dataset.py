@@ -14,6 +14,11 @@ class AudioDataset(Dataset):
         self.root = root
         self.train = train
 
+        if not self.train:
+            anomaly_data = [data for data in self.data if "anomaly" in data]
+            self.anomaly_num = len(anomaly_data)
+            self.normal_num = len(self.data) - self.anomaly_num
+
         self.frame_length = frame_length
         self.shift_length = shift_length
 
