@@ -98,9 +98,9 @@ class NormalizingFlow(nn.Module):
         z = x
         for i in range(len(self.flows) - 1, -1, -1):
             z, log_det = self.flows[i].inverse(z)
-            log_q += log_det
-        log_q += self.q0.log_prob(z)     
-        return z, -log_q
+            #log_q += log_det
+        #log_q += self.q0.log_prob(z)     
+        return -self.q0.log_prob(z)
 
 
 def BuildFlow(latent_size, num_layers):

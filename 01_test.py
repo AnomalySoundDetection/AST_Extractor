@@ -166,6 +166,8 @@ if __name__ == "__main__":
                                                                                      _id=_id)
                 
             file_list = test_dataset.data
+            anomaly_num = test_dataset.anomaly_num
+            normal_num = test_dataset.normal_num
 
             anomaly_score_record = []
 
@@ -208,6 +210,11 @@ if __name__ == "__main__":
                     
                     ground_truth_list[idx] = ground_truth.item()
                     anomaly_score_list[idx] = anomaly_score.item()
+
+                    if ground_truth.item() == 1:
+                        weight[idx] = anomaly_num / len(file_list)
+                    else:
+                        weight[idx] = normal_num / len(file_list)
 
                     anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 
