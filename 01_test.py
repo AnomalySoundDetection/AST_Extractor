@@ -202,10 +202,16 @@ if __name__ == "__main__":
                     batch = batch.to(device)
                     feature = extractor(batch)
                     #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                    feature = feature.unsqueeze(2)
-                    feature = feature.unsqueeze(3)
+                    #feature = feature.unsqueeze(2)
+                    #feature = feature.unsqueeze(3)
 
-                    anomaly_score = flow_model.forward(feature)
+                    output, log_jac_dets = flow_model(feature)
+
+                    mean_output = torch.mean(output, dim=1)
+                    print("Shape of mean output is {shape}}".format(shape=mean_output.shape))
+                    
+                    log_prob = -torch.sum(mean_output**2, dim=(1, 2), keepdim=True) * 0.5 + log_jac_dets
+                    anomaly_score = torch.mean(-log_prob)
                     
                     ground_truth_list.append(ground_truth.item())
                     anomaly_score_list.append(anomaly_score.item())

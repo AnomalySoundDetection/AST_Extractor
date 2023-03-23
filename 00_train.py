@@ -95,7 +95,7 @@ if __name__ == "__main__":
     visualizer = visualizer()
 
     # training device
-    device_0 = torch.device('cuda:0')
+    #device_0 = torch.device('cuda:0')
     device_1 = torch.device('cuda:1')
 
     # training info
@@ -180,10 +180,10 @@ if __name__ == "__main__":
             
             extractor = load_extractor(int(param['tdim']))
             extractor = nn.DataParallel(extractor, device_ids=[0, 1])
-            extractor = extractor.to(device=device_0)
+            extractor = extractor.to(device=device_1)
             extractor.eval()
 
-            flow_model = BuildFlow(latent_size=latent_size, channel=channel, num_layers=layer_num)
+            flow_model = BuildFlow(flow_steps=8)
             flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
@@ -211,11 +211,13 @@ if __name__ == "__main__":
                         with torch.no_grad():
                             feature = extractor(batch)
                             #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                            feature = feature.unsqueeze(2)
-                            feature = feature.unsqueeze(3)
+                            #feature = feature.unsqueeze(2)
+                            #feature = feature.unsqueeze(3)
                         
                         #feature = feature.to(device_1)
-                        loss = flow_model(feature)
+                        output, log_jac_dets = flow_model(feature)
+                        loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
+                        
 
                         #loss = torch.sum(loss)
                         #loss = loss.unsqueeze(0)
@@ -249,10 +251,11 @@ if __name__ == "__main__":
                             with torch.no_grad():
                                 feature = extractor(batch)
                                 #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                                feature = feature.unsqueeze(2)
-                                feature = feature.unsqueeze(3)
+                                #feature = feature.unsqueeze(2)
+                                #feature = feature.unsqueeze(3)
 
-                            loss = flow_model(feature)
+                            output, log_jac_dets = flow_model(feature)
+                            loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
 
                             loss = torch.mean(loss)
                             #log_prob = torch.mean(log_prob)
@@ -290,10 +293,10 @@ if __name__ == "__main__":
             torch.save(flow_model.state_dict(), model_file_path)
             com.logger.info("save_model -> {}".format(model_file_path))
 
-            del train_dataset, val_dataset, train_dl, val_dl, flow_model
+            del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
 
+            gc.collect()
             torch.cuda.empty_cache()
             
-            gc.collect()
 
             time.sleep(5)

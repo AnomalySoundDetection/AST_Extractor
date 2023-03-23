@@ -38,6 +38,7 @@ def NF_Fast_Flow(input_chw, conv3x3_only, hidden_ratio, flow_steps, clamp=2.0):
 class FastFlow(nn.Module):
     def __init__(
         self,
+        backbone_name,
         flow_steps,
         # input_size,
         conv3x3_only=False,
@@ -242,10 +243,3 @@ class FastFlow(nn.Module):
         #    anomaly_map = torch.mean(anomaly_map_list, dim=-1)
         #    ret["anomaly_map"] = anomaly_map
         #return ret
-
-
-def BuildFlow(flow_steps):
-
-    flow_model = FastFlow(flow_steps=flow_steps)
-
-    return flow_model
