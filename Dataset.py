@@ -42,6 +42,7 @@ class AudioDataset(Dataset):
         self.norm_mean = audio_conf['mean']
         self.norm_std = audio_conf['std']
         self.noise = audio_conf['noise']
+        self.sample_rate = audio_conf['sample_rate']
     
     def _wav2fbank(self, filename, filename2=None):
         # no mixup
@@ -81,7 +82,7 @@ class AudioDataset(Dataset):
         frame length: 50ms (default)
         shift length: 20ms
         """
-        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=sr, use_energy=False, frame_length=self.frame_length,
+        fbank = torchaudio.compliance.kaldi.fbank(waveform, htk_compat=True, sample_frequency=self.sample_rate, use_energy=False, frame_length=self.frame_length,
                                                   window_type='hanning', num_mel_bins=self.melbins, dither=0.0, frame_shift=self.shift_length)
         
         n_frames = fbank.shape[0]

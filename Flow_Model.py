@@ -108,8 +108,8 @@ def BuildFlow(latent_size, num_layers):
 
     flows = []
     for i in range(num_layers):
-        param_map = nf.nets.ConvResidualNet(in_channels=latent_size//2, hidden_channels=64, out_channels=latent_size)
-        #param_map = nf.nets.MLP([int(latent_size/2), 1024, 1024, latent_size], init_zeros=True)
+        #param_map = nf.nets.ConvResidualNet(in_channels=latent_size//2, hidden_channels=64, out_channels=latent_size)
+        param_map = nf.nets.MLP([latent_size//2, 1024, 1024, latent_size], init_zeros=True)
         flows.append(nf.flows.AffineCouplingBlock(param_map))
         flows.append(nf.flows.Permute(latent_size, mode='swap'))
 

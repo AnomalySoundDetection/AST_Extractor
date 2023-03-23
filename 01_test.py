@@ -86,7 +86,7 @@ if __name__ == "__main__":
     # check mode
     # "development": mode == True
     # "evaluation": mode == False
-    mode = com.command_line_chk()
+    mode, _ = com.command_line_chk()
     if mode is None:
         sys.exit(-1)
 
@@ -198,15 +198,15 @@ if __name__ == "__main__":
                     batch = batch.to(device)
                     feature = extractor(batch)
 
-                    feature = feature.unsqueeze(2)
-                    feature = feature.unsqueeze(3)
+                    #feature = feature.unsqueeze(2)
+                    #feature = feature.unsqueeze(3)
 
-                    output_z = flow_model(feature)
+                    #output_z = flow_model(feature)
 
-                    anomaly_score = -flow_model.q0.log_prob(output_z)
+                    anomaly_score = flow_model(feature)
                     
-                    ground_truth_list.append(ground_truth.item())
-                    anomaly_score_list.append(anomaly_score.item())
+                    ground_truth_list[idx] = ground_truth.item()
+                    anomaly_score_list[idx] = anomaly_score.item()
 
                     anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 

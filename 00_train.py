@@ -82,7 +82,7 @@ if __name__ == "__main__":
     # check mode
     # "development": mode == True
     # "evaluation": mode == False
-    mode = com.command_line_chk()
+    mode, machine_type = com.command_line_chk()
     if mode is None:
         sys.exit(-1)
 
@@ -111,10 +111,10 @@ if __name__ == "__main__":
 
     # audio config
     audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
     
     val_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                        'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                        'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
     # load base_directory list
     machine_list = com.get_machine_list(param["dev_directory"])
@@ -134,6 +134,10 @@ if __name__ == "__main__":
 
         print("Current Machine: ", machine)
         print("Machine ID List: ", id_list)
+
+        if machine_type != machine:
+            print("Skip train non-match machine type")
+            continue
 
         train_list = []
         val_list = []
@@ -175,16 +179,16 @@ if __name__ == "__main__":
             val_loss_list = []
             
             extractor = load_extractor(int(param['tdim']))
-            extractor = nn.DataParallel(extractor, device_ids=[0, 1])
-            extractor = extractor.to(device=device_0)
+            #extractor = nn.DataParallel(extractor, device_ids=[0, 1])
+            extractor = extractor.to(device=device_1)
             extractor.eval()
 
             flow_model = BuildFlow(int(param['latent_size']), int(param['NF_layers']))
-            flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
+            #flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
-            optimizer = torch.optim.Adam(flow_model.parameters(), lr=5e-4)
+            optimizer = torch.optim.Adam(flow_model.parameters(), lr=3e-6)
 
             
             for epoch in range(1, epochs+1):
@@ -199,9 +203,11 @@ if __name__ == "__main__":
 
                         optimizer.zero_grad()
 
-                        feature = extractor(batch)
-                        feature = feature.unsqueeze(2)
-                        feature = feature.unsqueeze(3)
+                        with torch.no_grad():
+                            batch = batch.to(device=device_1)
+                            feature = extractor(batch)
+                        #feature = feature.unsqueeze(2)
+                        #feature = feature.unsqueeze(3)
                         
                         #feature = feature.to(device_1)
                         loss = flow_model(feature)
@@ -231,13 +237,14 @@ if __name__ == "__main__":
                     with torch.no_grad():
                         for batch in tqdm(val_dl):
                             
-                            feature = extractor(batch)
-                            feature = feature.unsqueeze(2)
-                            feature = feature.unsqueeze(3)
+                            batch = batch.to(device=device_1)
+                            feature = extractor(batch).to(device=device_1)
+                            #feature = feature.unsqueeze(2)
+                            #feature = feature.unsqueeze(3)
 
-                            loss = flow_model(feature)
+                            loss = flow_model(feature).to(device=device_1)
 
-                            loss = torch.mean(loss)
+                            loss = torch.mean(loss).to(device=device_1)
                             #loss = loss.unsqueeze(0)
                             #loss = torch.mean(loss)
                             
@@ -267,10 +274,10 @@ if __name__ == "__main__":
             torch.save(flow_model.state_dict(), model_file_path)
             com.logger.info("save_model -> {}".format(model_file_path))
 
-            del train_dataset, val_dataset, train_dl, val_dl, flow_model
+            del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
 
+            gc.collect()
             torch.cuda.empty_cache()
             
-            gc.collect()
 
             time.sleep(5)

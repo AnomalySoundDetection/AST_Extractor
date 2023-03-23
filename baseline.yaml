@@ -5,7 +5,7 @@ result_file: result.csv
 
 max_fpr : 0.1
 latent_size: 768
-NF_layers: 8
+NF_layers: 32
 tdim: 1024
 frame_length: 25
 shift_length: 10
@@ -18,5 +18,5 @@ feature:
   fmax: 16000
 
 fit:
-  epochs : 200
+  epochs : 100
   batch_size : 4
