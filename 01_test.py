@@ -95,14 +95,14 @@ if __name__ == "__main__":
 
     # load base directory
     # training device
-    device = torch.device('cuda')
+    device = torch.device('cuda:1')
 
     # batch size
     batch_size = int(param["fit"]["batch_size"])
 
     # audio config
     test_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
-                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False}
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
     # initialize lines in csv for AUC and pAUC
     csv_lines = []
@@ -189,6 +189,7 @@ if __name__ == "__main__":
 
             anomaly_score_list = [0. for file in file_list]
             ground_truth_list = [0 for file in file_list]
+            weight = [0 for file in file_list]
 
             with torch.no_grad():
                 for idx, batch_info in enumerate(tqdm(test_dl)):
@@ -212,8 +213,8 @@ if __name__ == "__main__":
 
                 if mode:
                     # append AUC and pAUC to lists
-                    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
-                    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"])
+                    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
+                    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
                     anomaly_score_record.append([_id, auc, p_auc])
                     #performance.append([auc, p_auc])
                     com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
