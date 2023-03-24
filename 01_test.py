@@ -193,6 +193,7 @@ if __name__ == "__main__":
 
             anomaly_score_list = [0. for file in file_list]
             ground_truth_list = [0 for file in file_list]
+            weight = [0 for file in file_list]
 
             with torch.no_grad():
                 for idx, batch_info in enumerate(tqdm(test_dl)):
@@ -216,12 +217,17 @@ if __name__ == "__main__":
                     ground_truth_list[idx] = ground_truth.item()
                     anomaly_score_list[idx] = anomaly_score.item()
 
+                    if ground_truth.item() == 1:
+                        weight[idx] = anomaly_num / len(file_list)
+                    else:
+                        weight[idx] = normal_num / len(file_list)
+
                     anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 
                 if mode:
                     # append AUC and pAUC to lists
-                    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
-                    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"])
+                    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
+                    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
 
                     anomaly_score_record.append([_id, auc, p_auc])
                     #performance.append([auc, p_auc])
