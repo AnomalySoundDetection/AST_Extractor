@@ -86,7 +86,7 @@ if __name__ == "__main__":
     # check mode
     # "development": mode == True
     # "evaluation": mode == False
-    mode = com.command_line_chk()
+    mode, _ = com.command_line_chk()
     if mode is None:
         sys.exit(-1)
 
@@ -180,7 +180,7 @@ if __name__ == "__main__":
             extractor = extractor.to(device=device)
             extractor.eval()
 
-            flow_model = BuildFlow(latent_size=latent_size, channel=channel, num_layers=layer_num)
+            flow_model = BuildFlow(flow_steps=int(param['NF_layers']))
             #flow_model = nn.DataParallel(flow_model)
             flow_model.load_state_dict(torch.load(model_file_path), strict=False)
             flow_model = flow_model.to(device=device)
@@ -208,13 +208,13 @@ if __name__ == "__main__":
                     output, log_jac_dets = flow_model(feature)
 
                     mean_output = torch.mean(output, dim=1)
-                    print("Shape of mean output is {shape}}".format(shape=mean_output.shape))
+                    #print("Shape of mean output is {shape}".format(shape=mean_output.shape))
                     
                     log_prob = -torch.sum(mean_output**2, dim=(1, 2), keepdim=True) * 0.5 + log_jac_dets
                     anomaly_score = torch.mean(-log_prob)
                     
-                    ground_truth_list.append(ground_truth.item())
-                    anomaly_score_list.append(anomaly_score.item())
+                    ground_truth_list[idx] = ground_truth.item()
+                    anomaly_score_list[idx] = anomaly_score.item()
 
                     anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 

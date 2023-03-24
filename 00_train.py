@@ -82,7 +82,7 @@ if __name__ == "__main__":
     # check mode
     # "development": mode == True
     # "evaluation": mode == False
-    mode = com.command_line_chk()
+    mode, machine_type = com.command_line_chk()
     if mode is None:
         sys.exit(-1)
 
@@ -133,6 +133,10 @@ if __name__ == "__main__":
         
         root_path = param["dev_directory"] + "/" + machine
 
+        if machine_type != machine:
+            print("Skipping machine {}".format(machine))
+            continue
+
         data_list = com.select_dirs(param=param, machine=machine)
         id_list = com.get_machine_id_list(target_dir=root_path, dir_type="train")
 
@@ -179,16 +183,16 @@ if __name__ == "__main__":
             val_loss_list = []
             
             extractor = load_extractor(int(param['tdim']))
-            extractor = nn.DataParallel(extractor, device_ids=[0, 1])
+            #extractor = nn.DataParallel(extractor, device_ids=[0, 1])
             extractor = extractor.to(device=device_1)
             extractor.eval()
 
-            flow_model = BuildFlow(flow_steps=8)
-            flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
+            flow_model = BuildFlow(flow_steps=int(param['NF_layers']))
+            #flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
-            optimizer = torch.optim.Adam(flow_model.parameters(), lr=5e-4)
+            optimizer = torch.optim.Adam(flow_model.parameters(), lr=3e-4)
             #scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=50, gamma=0.1)
 
             
@@ -209,15 +213,14 @@ if __name__ == "__main__":
                         optimizer.zero_grad()
 
                         with torch.no_grad():
+                            batch = batch.to(device=device_1)
                             feature = extractor(batch)
-                            #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                            #feature = feature.unsqueeze(2)
-                            #feature = feature.unsqueeze(3)
-                        
-                        #feature = feature.to(device_1)
+                           
+                    
+                    
                         output, log_jac_dets = flow_model(feature)
-                        loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
                         
+                        loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
 
                         #loss = torch.sum(loss)
                         #loss = loss.unsqueeze(0)
@@ -249,6 +252,7 @@ if __name__ == "__main__":
                         for batch in tqdm(val_dl):
                             
                             with torch.no_grad():
+                                batch = batch.to(device=device_1)
                                 feature = extractor(batch)
                                 #feature = torch.reshape(feature, (-1, channel, 4, 4))
                                 #feature = feature.unsqueeze(2)
