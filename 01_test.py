@@ -170,6 +170,8 @@ if __name__ == "__main__":
                                                                                      _id=_id)
                 
             file_list = test_dataset.data
+            normal_num = test_dataset.normal_num
+            anomaly_num = test_dataset.anomaly_num
 
             anomaly_score_record = []
 
