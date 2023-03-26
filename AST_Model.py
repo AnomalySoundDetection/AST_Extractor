@@ -50,9 +50,9 @@ class ASTModel(nn.Module):
         super(ASTModel, self).__init__()
         assert timm.__version__ == '0.4.5', 'Please use timm == 0.4.5, the code might not be compatible with newer versions.'
 
-        if verbose == True:
-            print('---------------AST Model Summary---------------')
-            print('ImageNet pretraining: {:s}, AudioSet pretraining: {:s}'.format(str(imagenet_pretrain),str(audioset_pretrain)))
+        #if verbose == True:
+        #    print('---------------AST Model Summary---------------')
+        #    print('ImageNet pretraining: {:s}, AudioSet pretraining: {:s}'.format(str(imagenet_pretrain),str(audioset_pretrain)))
         # override timm input shape restriction
         timm.models.vision_transformer.PatchEmbed = PatchEmbed
 
@@ -78,9 +78,9 @@ class ASTModel(nn.Module):
             num_patches = f_dim * t_dim
             self.v.patch_embed.num_patches = num_patches
             
-            if verbose == True:
-                print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
-                print('number of patches={:d}'.format(num_patches))
+            #if verbose == True:
+            #    print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
+            #    print('number of patches={:d}'.format(num_patches))
 
             # the linear projection layer
             new_proj = torch.nn.Conv2d(1, self.original_embedding_dim, kernel_size=(16, 16), stride=(fstride, tstride))
@@ -137,16 +137,16 @@ class ASTModel(nn.Module):
             #self.v = audio_model.module.v
             self.v = audio_model.v
             self.original_embedding_dim = self.v.pos_embed.shape[2]
-            print("embedding size: ", self.original_embedding_dim)
+            #print("embedding size: ", self.original_embedding_dim)
             self.mlp_head = nn.Sequential(nn.LayerNorm(self.original_embedding_dim), nn.Linear(self.original_embedding_dim, label_dim))
 
             f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
             num_patches = f_dim * t_dim
             self.v.patch_embed.num_patches = num_patches
             
-            if verbose == True:
-                print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
-                print('number of patches={:d}'.format(num_patches))
+            #if verbose == True:
+            #    print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
+            #    print('number of patches={:d}'.format(num_patches))
 
             new_pos_embed = self.v.pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
             # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding

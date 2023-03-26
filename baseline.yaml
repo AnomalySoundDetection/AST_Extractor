@@ -1,5 +1,6 @@
 dev_directory : /mnt/HDD2/ASD_team/dev_data
 model_directory: ./model
+checkpoint_directory: ./checkpoint
 result_directory: ./result
 result_file: result.csv
 

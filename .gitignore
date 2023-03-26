@@ -4,6 +4,7 @@ dev_data/
 model_idcae/
 runs/
 temp/
+checkpoint/
 *.pth
 # Byte-compiled / optimized / DLL files
 __pycache__/
