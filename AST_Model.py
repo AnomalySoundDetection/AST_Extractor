@@ -206,6 +206,7 @@ class ASTModel(nn.Module):
         for blk in self.v.blocks:
             x = blk(x)
 
+        x = self.v.norm(x)
         #print("Size of x after going through all blocks in transformer is ", x.shape)
         B, _, C = x.shape
 
@@ -219,9 +220,8 @@ class ASTModel(nn.Module):
         resize 768 * 55 * 22
         '''
         x = torch.transpose(x, 1, 2)
-        x = torch.reshape(x, (B, C, 101, 12))
-
-        #x = self.v.norm(x)
+        x = torch.reshape(x, (B, C, 12, 101))
+        
         #x = (x[:, 0] + x[:, 1]) / 2
         #print("Size of x after averaging is ", x.shape)
 

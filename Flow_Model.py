@@ -10,6 +10,7 @@ import numpy as np
 def subnet_conv_func(kernel_size, hidden_ratio):
     def subnet_conv(in_channels, out_channels):
         hidden_channels = int(in_channels * hidden_ratio)
+        
         return nn.Sequential(
             nn.Conv2d(in_channels, hidden_channels, kernel_size, padding="same"),
             nn.ReLU(),
@@ -41,7 +42,7 @@ class FastFlow(nn.Module):
     def __init__(self, flow_steps, conv3x3_only=False, hidden_ratio=1.0):
         super(FastFlow, self).__init__()
 
-        self.nf_flows = NF_Fast_Flow([768, 101, 12], 
+        self.nf_flows = NF_Fast_Flow([768, 12, 101], 
                                     conv3x3_only=conv3x3_only, 
                                     hidden_ratio=hidden_ratio, 
                                     flow_steps=flow_steps)
@@ -54,10 +55,3 @@ class FastFlow(nn.Module):
         output, log_jac_dets = self.nf_flows(x)
         
         return output, log_jac_dets
-
-
-def BuildFlow(flow_steps):
-
-    flow_model = FastFlow(flow_steps=flow_steps)
-
-    return flow_model

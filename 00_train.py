@@ -30,8 +30,16 @@ from Dataset import AudioDataset
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from Flow_Model import BuildFlow
+from Flow_Model import FastFlow
+from sklearn import metrics
+import csv
 ########################################################################
+
+def save_csv(save_file_path,
+             save_data):
+    with open(save_file_path, "w", newline="") as f:
+        writer = csv.writer(f, lineterminator='\n')
+        writer.writerows(save_data)
 
 ########################################################################
 # visualizer
@@ -120,6 +128,9 @@ if __name__ == "__main__":
     val_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
                         'mode': 'test', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
+    test_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
+
     # load base_directory list
     machine_list = com.get_machine_list(param["dev_directory"])
     print("=====================================")
@@ -137,20 +148,25 @@ if __name__ == "__main__":
             print("Skipping machine {}".format(machine))
             continue
 
-        data_list = com.select_dirs(param=param, machine=machine)
+        # data_list = com.select_dirs(param=param, machine=machine)
+        # id_list = com.get_machine_id_list(target_dir=root_path, dir_type="train")
+
+        train_list = com.select_dirs(param=param, machine=machine)
+        test_list = com.select_dirs(param=param, machine=machine, dir_type="test")
+
         id_list = com.get_machine_id_list(target_dir=root_path, dir_type="train")
 
         print("Current Machine: ", machine)
         print("Machine ID List: ", id_list)
 
-        train_list = []
-        val_list = []
+        # train_list = []
+        # val_list = []
 
-        for path in data_list:
-            if random.random() < 0.85:
-                train_list.append(path)
-            else:
-                val_list.append(path)
+        # for path in data_list:
+        #     if random.random() < 1.1:
+        #         train_list.append(path)
+        #     else:
+        #         val_list.append(path)
         
         for _id in id_list:
             # generate dataset
@@ -159,11 +175,14 @@ if __name__ == "__main__":
 
             train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
                                          shift_length=int(param['shift_length']), audio_conf=audio_conf)
-            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
-                                         shift_length=int(param['shift_length']),audio_conf=val_audio_conf)
+            # val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                        #  shift_length=int(param['shift_length']),audio_conf=val_audio_conf)
+            test_dataset = AudioDataset(data=test_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                         shift_length=int(param['shift_length']), audio_conf=test_audio_conf, train=False)
             
             train_dl = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
-            val_dl = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
+            # val_dl = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
+            test_dl = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False)
 
             print("------ DONE -------")
             
@@ -187,26 +206,33 @@ if __name__ == "__main__":
             extractor = extractor.to(device=device_1)
             extractor.eval()
 
-            flow_model = BuildFlow(flow_steps=int(param['NF_layers']))
+            flow_model = FastFlow(flow_steps=int(param['NF_layers']))
             #flow_model = nn.DataParallel(flow_model, device_ids=[1, 0])
             flow_model = flow_model.to(device=device_1)
 
             # set up training info
-            optimizer = torch.optim.Adam(flow_model.parameters(), lr=3e-4)
+            optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
             #scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=50, gamma=0.1)
 
-            
+            original_auc = 0
+            original_pauc = 0
+
+            file_list = test_dataset.data
+            normal_num = test_dataset.normal_num
+            anomaly_num = test_dataset.anomaly_num
+
             for epoch in range(1, epochs+1):
                 try:
                     train_loss = 0.0
-                    val_loss = 0.0
-
-                    #train_log_prob = 0.0
-                    #val_log_prob = 0.0
 
                     print("Epoch: {}".format(epoch))
 
                     flow_model.train()
+
+                    '''
+                    Train
+                    '''
+                    print("Running train dataset...")
 
                     for batch in tqdm(train_dl):
 
@@ -215,28 +241,18 @@ if __name__ == "__main__":
                         with torch.no_grad():
                             batch = batch.to(device=device_1)
                             feature = extractor(batch)
-                           
-                    
                     
                         output, log_jac_dets = flow_model(feature)
                         
                         loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
 
-                        #loss = torch.sum(loss)
-                        #loss = loss.unsqueeze(0)
                         loss = torch.mean(loss)
-                        #log_prob = torch.mean(log_prob)
-
-                        # Do backprop and optimizer step
                     
                         if ~(torch.isnan(loss) | torch.isinf(loss)):
                             loss.backward()
                             optimizer.step()
                         
                         train_loss += loss.item()
-                        #train_log_prob += log_prob.item()
-
-                        del batch
 
                         gc.collect()
                         torch.cuda.empty_cache()
@@ -244,60 +260,152 @@ if __name__ == "__main__":
                     train_loss /= len(train_dl)
                     train_loss_list.append(train_loss)
 
-                    #train_log_prob /= len(train_dl)
+                    print("Train Loss: {train_loss}".format(train_loss=train_loss))
+
+                    '''
+                    Test AUROC
+                    '''
+                    anomaly_score_list = [0. for file in file_list]
+                    ground_truth_list = [0 for file in file_list]
+                    weight = [0. for file in file_list]
 
                     flow_model.eval()
+
+                    print("Running test dataset...")
+                    print("----------------- Evaluating -------------------")
                     
                     with torch.no_grad():
-                        for batch in tqdm(val_dl):
-                            
-                            with torch.no_grad():
-                                batch = batch.to(device=device_1)
-                                feature = extractor(batch)
-                                #feature = torch.reshape(feature, (-1, channel, 4, 4))
-                                #feature = feature.unsqueeze(2)
-                                #feature = feature.unsqueeze(3)
+                        for idx, batch_info in enumerate(tqdm(test_dl)):
+                    
+                            batch, ground_truth = batch_info
+
+                            batch = batch.to(device=device_1)
+                            feature = extractor(batch)
 
                             output, log_jac_dets = flow_model(feature)
-                            loss = 0.5 * torch.sum(output**2, dim=(1, 2, 3)) - log_jac_dets
 
-                            loss = torch.mean(loss)
-                            #log_prob = torch.mean(log_prob)
-                            #loss = loss.unsqueeze(0)
-                            #loss = torch.mean(loss)
-                            
-                            val_loss += loss.item()
-                            #val_log_prob += log_prob.item()
+                            log_prob = -torch.mean(output**2, dim=1) * 0.5
+                    
+                            log_prob = log_prob.reshape(shape=(1, -1)) 
+                            sorted_log_prob, _ = torch.sort(log_prob)
+                    
+                            anomaly_score = -torch.mean(sorted_log_prob[:100])
+                            #anomaly_score = -log_prob
+                    
+                            ground_truth_list[idx] = ground_truth.item()
+                            anomaly_score_list[idx] = anomaly_score.item()
 
-                            del batch
+                            if ground_truth.item() == 1:
+                                weight[idx] = anomaly_num / len(file_list)
+                            else:
+                                weight[idx] = normal_num / len(file_list)
 
-                            gc.collect()
-                            torch.cuda.empty_cache()
+                        auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
+                        p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
 
-                    val_loss /= len(val_dl)
-                    val_loss_list.append(val_loss)
+                        com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+                        com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
 
-                    #val_log_prob /= len(val_dl)
+                    if auc >= original_auc and p_auc >= original_pauc:
+                        torch.save({
+                            'model_stat_dict': flow_model.state_dict(),
+                            'optimizer_stat_dict': optimizer.state_dict(),
+                            'epoch': epoch, 
+                            'loss': train_loss
+                            }, checkpoint_path
+                        )
 
-                    print("Train Loss: {train_loss}, Validation Loss: {val_loss}".format(train_loss=train_loss, val_loss=val_loss))
-                    #print("Train Log Prob: {train_log_prob}, Validation Log Prob: {val_log_prob}".format(train_log_prob=train_log_prob, val_log_prob=val_log_prob))
+                        original_auc = auc
+                        original_pauc = p_auc
 
-                    gc.collect()
-                    torch.cuda.empty_cache()
-            
+                    else:
+                        checkpoint = torch.load(checkpoint_path)
+
+                        flow_model = FastFlow(flow_steps=int(param['NF_layers']))
+                        flow_model.load_state_dict(checkpoint['model_stat_dict'])
+                        flow_model = flow_model.to(device=device_1)
+
+                        optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
+                        optimizer.load_state_dict(checkpoint['optimizer_stat_dict'])
+
+                        train_loss = checkpoint['loss']
+                        train_loss_list[-1] = train_loss
+
+                        print("Reloading Model from epoch {ep}".format(ep=checkpoint['epoch']))
+
                 except:
                     print("Error during training, stop at epoch {ep}".format(ep=epoch))
-                    torch.save(flow_model.state_dict(), checkpoint_path)
-                    com.logger.info("save checkpoint -> {}".format(checkpoint_path))
+                    torch.save({
+                        'model_stat_dict': flow_model.state_dict()
+                        }, model_file_path
+                    )
+                    com.logger.info("save model -> {}".format(model_file_path))
                     exit(1)
             
             visualizer.loss_plot(train_loss_list, val_loss_list)
             visualizer.save_figure(history_img)
+
+            print("----------------- Recording Score -------------------")
+            anomaly_score_list = [0. for file in file_list]
+            ground_truth_list = [0 for file in file_list]
+            weight = [0. for file in file_list]
+
+            anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result=param["result_directory"],
+                                                                                     machine=machine,
+                                                                                     _id=_id)
+            anomaly_score_record = []
+
+            with torch.no_grad():                   
+                for idx, batch_info in enumerate(tqdm(test_dl)):
+                
+                    batch, ground_truth = batch_info
+
+                    batch = batch.to(device=device_1)
+                    feature = extractor(batch)
+
+                    output, log_jac_dets = flow_model(feature)
+
+                    log_prob = -torch.mean(output**2, dim=1) * 0.5
+
             
-            torch.save(flow_model.state_dict(), model_file_path)
+                    log_prob = log_prob.reshape(shape=(1, -1)) 
+                    sorted_log_prob, _ = torch.sort(log_prob)
+            
+                    anomaly_score = -torch.mean(sorted_log_prob[:100])
+                    #anomaly_score = -log_prob
+            
+                    ground_truth_list[idx] = ground_truth.item()
+                    anomaly_score_list[idx] = anomaly_score.item()
+
+                    if ground_truth.item() == 1:
+                        weight[idx] = anomaly_num / len(file_list)
+                    else:
+                        weight[idx] = normal_num / len(file_list)
+
+                    anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
+
+                # append AUC and pAUC to lists
+                auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
+                p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
+
+                anomaly_score_record.append([_id, auc, p_auc])
+                #performance.append([auc, p_auc])
+                com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+                com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
+
+                # save anomaly score
+                save_csv(save_file_path=anomaly_score_csv, save_data=anomaly_score_record)
+                com.logger.info("anomaly score result ->  {}".format(anomaly_score_csv))
+            
+            torch.save({
+                'model_stat_dict': flow_model.state_dict()
+                }, model_file_path
+            )
+
             com.logger.info("save_model -> {}".format(model_file_path))
 
-            del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
+            #del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
+            del train_dataset, test_dataset, train_dl, test_dl, flow_model, extractor
 
             gc.collect()
             torch.cuda.empty_cache()

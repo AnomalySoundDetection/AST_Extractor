@@ -173,7 +173,7 @@ if __name__ == "__main__":
             normal_num = test_dataset.normal_num
             anomaly_num = test_dataset.anomaly_num
 
-            anomaly_score_record = []
+            nomaly_score_record = []a
 
             print("\n----------------")
             print("Load Model")
@@ -184,7 +184,7 @@ if __name__ == "__main__":
 
             flow_model = BuildFlow(flow_steps=int(param['NF_layers']))
             #flow_model = nn.DataParallel(flow_model)
-            flow_model.load_state_dict(torch.load(model_file_path), strict=False)
+            flow_model.load_state_dict(torch.load(model_file_path))
             flow_model = flow_model.to(device=device)
             flow_model.eval()
 
@@ -195,14 +195,14 @@ if __name__ == "__main__":
 
             anomaly_score_list = [0. for file in file_list]
             ground_truth_list = [0 for file in file_list]
-            weight = [0 for file in file_list]
+            weight = [0. for file in file_list]
 
-            with torch.no_grad():
+            with torch.no_grad():                   
                 for idx, batch_info in enumerate(tqdm(test_dl)):
-                    
+                
                     batch, ground_truth = batch_info
 
-                    batch = batch.to(device)
+                    batch = batch.to(device=device)
                     feature = extractor(batch)
                     #feature = torch.reshape(feature, (-1, channel, 4, 4))
                     #feature = feature.unsqueeze(2)
@@ -210,12 +210,18 @@ if __name__ == "__main__":
 
                     output, log_jac_dets = flow_model(feature)
 
-                    mean_output = torch.mean(output, dim=1)
+                    log_prob = -torch.mean(output**2, dim=1) * 0.5
+                    #prob = torch.exp(log_prob) 
                     #print("Shape of mean output is {shape}".format(shape=mean_output.shape))
-                    
-                    log_prob = -torch.sum(mean_output**2, dim=(1, 2), keepdim=True) * 0.5 + log_jac_dets
-                    anomaly_score = torch.mean(-log_prob)
-                    
+            
+                    log_prob = log_prob.reshape(shape=(1, -1)) 
+                    sorted_log_prob, _ = torch.sort(log_prob)
+                    #print("Shape of output is {shape}".format(shape=log_prob.shape))
+                    #log_prob = -torch.sum(output**2, dim=(1, 2, 3)) * 0.5
+            
+                    anomaly_score = -torch.mean(sorted_log_prob[:50])
+                    #anomaly_score = -log_prob
+            
                     ground_truth_list[idx] = ground_truth.item()
                     anomaly_score_list[idx] = anomaly_score.item()
 

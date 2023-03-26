@@ -103,7 +103,7 @@ class FastFlow(nn.Module):
         #if self.backbone_name in [const.BACKBONE_DEIT, const.BACKBONE_CAIT, const.BACKBONE_RESNET18, const.BACKBONE_WIDE_RESNET50]:
         '''
         channel: 768
-        size of feature: 55 * 22
+        size of feature: 32 * 22
         '''
         
         self.nf_flows.append(
