@@ -97,7 +97,7 @@ if __name__ == "__main__":
     param = com.load_yaml()
         
     # make result directory
-    os.makedirs(param["result_directory"], exist_ok=True)
+    os.makedirs("./tmp_result", exist_ok=True)
 
     # initialize the visualizer
     #visualizer = visualizer()
@@ -174,10 +174,10 @@ if __name__ == "__main__":
             print("------ DONE -------")
             
             model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
-            checkpoint_path = "{model}/checkpoint_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
+            checkpoint_path = "{checkpoint}/checkpoint_{machine}_{_id}.pt".format(checkpoint=param["checkpoint_directory"], machine=machine, _id=_id)
             #history_img = "{model}/history_{machine}_{_id}.png".format(model=param["model_directory"], machine=machine, _id=_id)
 
-            if not os.path.exists(model_file_path):
+            if not os.path.exists(checkpoint_path):
                 com.logger.error("{machine} {_id} model not found ".format(machine=machine, _id=_id))
                 continue
 
@@ -189,10 +189,10 @@ if __name__ == "__main__":
             extractor = extractor.to(device=device_1)
             extractor.eval()
 
-            model_state_dict = torch.load(model_file_path)
+            model_state_dict = torch.load(checkpoint_path)
 
             flow_model = FastFlow(flow_steps=int(param['NF_layers']))
-            flow_model.load_state_dict(model_state_dict['model_stat_dict'])
+            flow_model.load_state_dict(model_state_dict['model_state_dict'])
             flow_model = flow_model.to(device=device_1)
 
             file_list = test_dataset.data
@@ -205,7 +205,7 @@ if __name__ == "__main__":
             ground_truth_list = [0 for file in file_list]
             weight = [0. for file in file_list]
 
-            anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result=param["result_directory"],
+            anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result="./tmp_result",
                                                                                      machine=machine,
                                                                                      _id=_id)
             anomaly_score_record = []
