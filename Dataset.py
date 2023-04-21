@@ -11,12 +11,19 @@ def load_audio(audio_path, sample_rate):
 
 class AudioDataset(Dataset):
     def __init__(self, data, _id, root, audio_conf, frame_length, shift_length, train=True):
-        self.data = [sample for sample in data if _id in sample]
+        
+        self.data = data
         self.root = root
         self.train = train
+        self._id = _id
+
+        # if val:
+        #     self.data = data
+        # else:
+        #     self.data = [sample for sample in data if _id in sample]
 
         if not self.train:
-            anomaly_data = [data for data in self.data if "anomaly" in data]
+            anomaly_data = [data for data in self.data if "anomaly" in data or self._id not in data]
             self.anomaly_num = len(anomaly_data)
             self.normal_num = len(self.data) - self.anomaly_num
             #print(len(self.data))
@@ -184,7 +191,7 @@ class AudioDataset(Dataset):
         if self.train:
             return fbank
         else:
-            return fbank, 1 if "anomaly" in file_path else 0
+            return fbank, 1 if "anomaly" in file_path or self._id not in file_path else 0
     
     def __len__(self):
         return len(self.data)

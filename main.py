@@ -33,6 +33,9 @@ from torch.utils.data import DataLoader
 from Flow_Model import FastFlow
 from sklearn import metrics
 import csv
+from sklearn.tree import DecisionTreeClassifier
+import pickle
+from sklearn import tree
 ########################################################################
 
 ########################################################################
@@ -81,17 +84,18 @@ def train_one_epoch(extractor, flow_model, optimizer, train_dl):
 
     print("Train Loss: {train_loss}".format(train_loss=train_loss))
 
-def test_one_epoch(extractor, flow_model, test_dl, file_list):
+def test_one_epoch(extractor, flow_model, val_dl, file_list, fpr):
     
     extractor.eval()
     flow_model.eval()
 
+    # print("file list length: ", len(file_list))
     anomaly_score_list = [0. for file in file_list]
     ground_truth_list = [0 for file in file_list]
-    weight = [0. for file in file_list]
+    # weight = [0. for file in file_list]
 
     with torch.no_grad():
-        for idx, batch_info in enumerate(tqdm(test_dl)):
+        for idx, batch_info in enumerate(tqdm(val_dl)):
     
             batch, ground_truth = batch_info
 
@@ -111,17 +115,17 @@ def test_one_epoch(extractor, flow_model, test_dl, file_list):
             ground_truth_list[idx] = ground_truth.item()
             anomaly_score_list[idx] = anomaly_score.item()
 
-            if ground_truth.item() == 1:
-                weight[idx] = anomaly_num / len(file_list)
-            else:
-                weight[idx] = normal_num / len(file_list)
+            # if ground_truth.item() == 1:
+            #     weight[idx] = anomaly_num / len(file_list)
+            # else:
+            #     weight[idx] = normal_num / len(file_list)
 
-    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
-    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
+    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
+    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=fpr)
 
     return auc, p_auc
 
-def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv):
+def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv, anomaly_num, normal_num, fpr, decision_function):
 
     extractor.eval()
     flow_model.eval()
@@ -160,15 +164,59 @@ def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv):
 
             anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 
-    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
-    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=param["max_fpr"], sample_weight=weight)
+    prediction = decision_function.predict(np.array(anomaly_score_list).reshape(-1, 1))
+
+    auc = metrics.roc_auc_score(ground_truth_list, prediction)
+    p_auc = metrics.roc_auc_score(ground_truth_list, prediction, max_fpr=fpr)
 
     anomaly_score_record.append([_id, auc, p_auc])
 
     save_csv(save_file_path=anomaly_score_csv, save_data=anomaly_score_record)
 
     return auc, p_auc
+
+def find_threshold(extractor, flow_model, val_dl, file_list):
     
+    extractor.eval()
+    flow_model.eval()
+
+    # print("file list length: ", len(file_list))
+    anomaly_score_list = [0. for file in file_list]
+    ground_truth_list = [0 for file in file_list]
+    # weight = [0. for file in file_list]
+
+    with torch.no_grad():
+        for idx, batch_info in enumerate(tqdm(val_dl)):
+    
+            batch, ground_truth = batch_info
+
+            batch = batch.to(device=device_1)
+            feature = extractor(batch)
+
+            output, log_jac_dets = flow_model(feature)
+
+            log_prob = -torch.mean(output**2, dim=1) * 0.5
+    
+            log_prob = log_prob.reshape(shape=(1, -1)) 
+            sorted_log_prob, _ = torch.sort(log_prob)
+    
+            anomaly_score = -torch.mean(sorted_log_prob[:100])
+            #anomaly_score = -log_prob
+    
+            ground_truth_list[idx] = ground_truth.item()
+            anomaly_score_list[idx] = anomaly_score.item()
+
+    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
+    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=0.1)
+
+    print("------ Finding Threshold ------")
+    print("Original AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+    print("Original pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
+    
+    clf = DecisionTreeClassifier(max_depth=1)
+    clf = clf.fit(np.array(anomaly_score_list).reshape(-1, 1), np.array(ground_truth_list).reshape(-1, 1))
+
+    return clf
 
 ########################################################################
 # main 00_train.py
@@ -188,6 +236,7 @@ if __name__ == "__main__":
     os.makedirs(param["model_directory"], exist_ok=True)
     os.makedirs(param["checkpoint_directory"], exist_ok=True)
     os.makedirs(param["result_directory"], exist_ok=True)
+    os.makedirs(param["decision_function_directory"], exist_ok=True)
 
     # training device
     device_1 = torch.device('cuda:1')
@@ -205,6 +254,9 @@ if __name__ == "__main__":
 
     # audio config
     audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
+                    'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
+    
+    val_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
                     'mode': 'train', 'mean': -4.2677393, 'std': 4.5689974, 'noise': False, 'sample_rate': 16000}
 
     test_audio_conf = {'num_mel_bins': 128, 'target_length': int(param['tdim']), 'freqm': 0, 'timem': 0, 'mixup': 0, 'dataset': 'dcase', 
@@ -226,9 +278,9 @@ if __name__ == "__main__":
         if machine_type != machine:
             print("Skipping machine {}".format(machine))
             continue
-
-        train_list = com.select_dirs(param=param, machine=machine)
-        test_list = com.select_dirs(param=param, machine=machine, dir_type="test")
+        
+        machine_train_list = com.select_dirs(param=param, machine=machine)
+        machine_test_list = com.select_dirs(param=param, machine=machine, dir_type="test")
 
         id_list = com.get_machine_id_list(target_dir=root_path)
 
@@ -237,6 +289,26 @@ if __name__ == "__main__":
 
         
         for _id in id_list:
+            
+            train_list, val_list, test_list = [], [], []
+
+            tmp_train_list = [sample for sample in machine_train_list if _id in sample]
+
+            for sample in tmp_train_list:
+                if random.random() < 0.9:
+                    train_list.append(sample)
+                else:
+                    val_list.append(sample)
+
+            tmp_train_list = [sample for sample in machine_train_list if _id not in sample]
+            random.shuffle(tmp_train_list)
+            random.shuffle(tmp_train_list)
+            random.shuffle(tmp_train_list)
+
+            val_list += tmp_train_list[:len(val_list)]
+
+            test_list = [sample for sample in machine_test_list if _id in sample]
+
             # generate dataset
             print("----------------")
             print("Generating Dataset of Current ID: ", _id)
@@ -244,101 +316,130 @@ if __name__ == "__main__":
             train_dataset = AudioDataset(data=train_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
                                          shift_length=int(param['shift_length']), audio_conf=audio_conf)
 
+            val_dataset = AudioDataset(data=val_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
+                                         shift_length=int(param['shift_length']), audio_conf=val_audio_conf, train=False)
+
             test_dataset = AudioDataset(data=test_list, _id=_id, root=root_path, frame_length=int(param['frame_length']), 
                                          shift_length=int(param['shift_length']), audio_conf=test_audio_conf, train=False)
             
             train_dl = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+
+            val_dl = DataLoader(dataset=val_dataset, batch_size=1, shuffle=False)
 
             test_dl = DataLoader(dataset=test_dataset, batch_size=1, shuffle=False)
 
             
             model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
             checkpoint_path = "{checkpoint}/checkpoint_{machine}_{_id}.pt".format(checkpoint=param["checkpoint_directory"], machine=machine, _id=_id)
+            decision_function_path = "{model}/decision_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
 
-            if os.path.exists(model_file_path):
-                com.logger.info("model exists")
-                continue
-
-            # train model
-            print("------------ Model Loading ------------\n")
-
-            #train_loss_list = []
-            
-            extractor = load_extractor(int(param['tdim']))
-            extractor = extractor.to(device=device_1)
-
-            flow_model = FastFlow(flow_steps=int(param['NF_layers']))
-            flow_model = flow_model.to(device=device_1)
-
-            # set up training info
-            optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
-            #scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=50, gamma=0.1)
-
-            original_auc = 0
-            original_pauc = 0
-
-            file_list = test_dataset.data
-            normal_num = test_dataset.normal_num
-            anomaly_num = test_dataset.anomaly_num
-
-            for epoch in range(1, epochs+1):                  
-                print("Epoch: {}".format(epoch))
+            if mode:
+                if os.path.exists(model_file_path):
+                    com.logger.info("model exists")
+                    continue
                 
-                print("----------------- Training -------------------")
+                # train model
+                print("------------ Model Loading ------------\n")
 
-                train_one_epoch(extractor=extractor, flow_model=flow_model, optimizer=optimizer, train_dl=train_dl)
+                #train_loss_list = []
+                
+                extractor = load_extractor(int(param['tdim']))
+                extractor = extractor.to(device=device_1)
+
+                flow_model = FastFlow(flow_steps=int(param['NF_layers']))
+                flow_model = flow_model.to(device=device_1)
+
+                # set up training info
+                optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
+                #scheduler = torch.optim.lr_scheduler.StepLR(optimizer=optimizer, step_size=50, gamma=0.1)
+
+                original_auc, original_pauc = 0, 0
+
+                for epoch in range(1, epochs+1):                  
+                    print("Epoch: {}".format(epoch))
                     
-                print("----------------- Evaluating -------------------")
+                    print("----------------- Training -------------------")
+                    train_one_epoch(extractor=extractor, flow_model=flow_model, optimizer=optimizer, train_dl=train_dl)
 
-                auc, p_auc = test_one_epoch(extractor=extractor, flow_model=flow_model, test_dl=test_dl, file_list=file_list)
-                    
-                com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
-                com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
+                    if epoch % 5 == 0:    
+                        print("----------------- Evaluating -------------------")
+                        auc, p_auc = test_one_epoch(extractor=extractor, flow_model=flow_model, val_dl=val_dl, file_list=val_list, fpr=param['max_fpr'])
+                            
+                        com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+                        com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
 
-                if auc >= original_auc and p_auc >= original_pauc:
-                    torch.save({
-                        'model_state_dict': flow_model.state_dict(),
-                        'optimizer_state_dict': optimizer.state_dict(),
-                        'epoch': epoch
-                        }, checkpoint_path
-                    )
+                        if auc >= original_auc and p_auc >= original_pauc:
+                            torch.save({
+                                'model_state_dict': flow_model.state_dict(),
+                                'optimizer_state_dict': optimizer.state_dict(),
+                                'epoch': epoch
+                                }, checkpoint_path
+                            )
 
-                    original_auc = auc
-                    original_pauc = p_auc
+                            original_auc, original_pauc = auc, p_auc
 
-                else:
-                    checkpoint = torch.load(checkpoint_path)
+                        else:
+                            checkpoint = torch.load(checkpoint_path)
 
-                    flow_model = FastFlow(flow_steps=int(param['NF_layers']))
-                    flow_model.load_state_dict(checkpoint['model_state_dict'])
-                    flow_model = flow_model.to(device=device_1)
+                            flow_model = FastFlow(flow_steps=int(param['NF_layers']))
+                            flow_model.load_state_dict(checkpoint['model_state_dict'])
+                            flow_model = flow_model.to(device=device_1)
 
-                    optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
-                    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+                            optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
+                            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-                    print("Reloading Model from epoch {ep}".format(ep=checkpoint['epoch']))
-            
+                            print("Reloading Model from epoch {ep}".format(ep=checkpoint['epoch']))
+                
 
-            torch.save({
-                'model_state_dict': flow_model.state_dict()
-                }, model_file_path
-            )
+                torch.save({
+                    'model_state_dict': flow_model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'epoch': epochs
+                    }, model_file_path
+                )
 
-            com.logger.info("save_model -> {}".format(model_file_path))
+                decision_function = find_threshold(extractor=extractor, flow_model=flow_model, val_dl=val_dl, file_list=val_list)
+                tree.plot_tree(decision_function)
+                pickle.dump(decision_function, open(decision_function_path, 'wb'))
+                
+                com.logger.info("save_model -> {}".format(model_file_path))
+
+                # del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
+                del train_dataset, val_dataset, train_dl, val_dl
+
+                gc.collect()
+                torch.cuda.empty_cache()
+
 
             print("---------------- Recording Score ------------------")
+
+            if not os.path.exists(model_file_path):
+                com.logger.error("{machine} {_id} model not found ".format(machine=machine, _id=_id))
+                continue
 
             anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result=param["result_directory"],
                                                                                      machine=machine,
                                                                                      _id=_id)
+            
+            test_extractor = load_extractor(int(param['tdim']))
+            test_extractor = extractor.to(device=device_1)
 
-            auc, p_auc = record_csv(extractor=extractor, flow_model=flow_model, test_dl=test_dl, file_list=file_list, anomaly_score_csv=anomaly_score_csv)
+            test_model = torch.load(checkpoint_path)
+
+            test_flow_model = FastFlow(flow_steps=int(param['NF_layers']))
+            test_flow_model.load_state_dict(test_model['model_state_dict'])
+            test_flow_model = flow_model.to(device=device_1)
+
+            test_decision_function = pickle.load(open(decision_function_path, 'rb'))
+
+            auc, p_auc = record_csv(extractor=test_extractor, flow_model=test_flow_model, test_dl=test_dl, file_list=test_list, anomaly_score_csv=anomaly_score_csv, 
+                                    anomaly_num=test_dataset.anomaly_num, normal_num=test_dataset.normal_num, fpr=param['max_fpr'], decision_function=test_decision_function)
                 
             com.logger.info("Final AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
             com.logger.info("Final pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc)) 
             com.logger.info("anomaly score result ->  {}".format(anomaly_score_csv))
 
-            del train_dataset, test_dataset, train_dl, test_dl, flow_model, extractor
+            del test_dataset, test_dl, flow_model, extractor
 
             gc.collect()
             torch.cuda.empty_cache()

@@ -3,6 +3,7 @@ model_directory: ./model
 checkpoint_directory: ./checkpoint
 result_directory: ./result
 result_file: result.csv
+decision_function_directory: ./decision
 
 max_fpr : 0.1
 
@@ -21,5 +22,5 @@ feature:
   fmax: 16000
 
 fit:
-  epochs : 100
+  epochs : 200
   batch_size : 4
