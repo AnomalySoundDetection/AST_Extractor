@@ -25,7 +25,7 @@ from tqdm import tqdm
 # original lib
 import common as com
 import random
-from AST_Model import load_extractor
+from AST_Model import load_extractor, ASTModel
 from Dataset import AudioDataset
 import torch
 import torch.nn as nn
@@ -33,9 +33,6 @@ from torch.utils.data import DataLoader
 from Flow_Model import FastFlow
 from sklearn import metrics
 import csv
-from sklearn.tree import DecisionTreeClassifier
-import pickle
-from sklearn import tree
 ########################################################################
 
 ########################################################################
@@ -56,6 +53,10 @@ def train_one_epoch(extractor, flow_model, optimizer, train_dl):
     
     extractor.eval()
     flow_model.train()
+
+    # print("########## AST MODEL ##########")
+    # print(extractor)
+    # print("###############################")
 
     for batch in tqdm(train_dl):
 
@@ -125,7 +126,7 @@ def test_one_epoch(extractor, flow_model, val_dl, file_list, fpr):
 
     return auc, p_auc
 
-def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv, anomaly_num, normal_num, fpr, decision_function):
+def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv, anomaly_num, normal_num, fpr):
 
     extractor.eval()
     flow_model.eval()
@@ -164,59 +165,15 @@ def record_csv(extractor, flow_model, test_dl, file_list, anomaly_score_csv, ano
 
             anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 
-    prediction = decision_function.predict(np.array(anomaly_score_list).reshape(-1, 1))
 
-    auc = metrics.roc_auc_score(ground_truth_list, prediction)
-    p_auc = metrics.roc_auc_score(ground_truth_list, prediction, max_fpr=fpr)
+    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, sample_weight=weight)
+    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=fpr, sample_weight=weight)
 
     anomaly_score_record.append([_id, auc, p_auc])
 
     save_csv(save_file_path=anomaly_score_csv, save_data=anomaly_score_record)
 
     return auc, p_auc
-
-def find_threshold(extractor, flow_model, val_dl, file_list):
-    
-    extractor.eval()
-    flow_model.eval()
-
-    # print("file list length: ", len(file_list))
-    anomaly_score_list = [0. for file in file_list]
-    ground_truth_list = [0 for file in file_list]
-    # weight = [0. for file in file_list]
-
-    with torch.no_grad():
-        for idx, batch_info in enumerate(tqdm(val_dl)):
-    
-            batch, ground_truth = batch_info
-
-            batch = batch.to(device=device_1)
-            feature = extractor(batch)
-
-            output, log_jac_dets = flow_model(feature)
-
-            log_prob = -torch.mean(output**2, dim=1) * 0.5
-    
-            log_prob = log_prob.reshape(shape=(1, -1)) 
-            sorted_log_prob, _ = torch.sort(log_prob)
-    
-            anomaly_score = -torch.mean(sorted_log_prob[:100])
-            #anomaly_score = -log_prob
-    
-            ground_truth_list[idx] = ground_truth.item()
-            anomaly_score_list[idx] = anomaly_score.item()
-
-    auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
-    p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=0.1)
-
-    print("------ Finding Threshold ------")
-    print("Original AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
-    print("Original pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
-    
-    clf = DecisionTreeClassifier(max_depth=1)
-    clf = clf.fit(np.array(anomaly_score_list).reshape(-1, 1), np.array(ground_truth_list).reshape(-1, 1))
-
-    return clf
 
 ########################################################################
 # main 00_train.py
@@ -236,10 +193,9 @@ if __name__ == "__main__":
     os.makedirs(param["model_directory"], exist_ok=True)
     os.makedirs(param["checkpoint_directory"], exist_ok=True)
     os.makedirs(param["result_directory"], exist_ok=True)
-    os.makedirs(param["decision_function_directory"], exist_ok=True)
 
     # training device
-    device_1 = torch.device('cuda:1')
+    device_1 = torch.device('cuda:0')
 
     # training info
     epochs = int(param["fit"]["epochs"])
@@ -331,7 +287,6 @@ if __name__ == "__main__":
             
             model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
             checkpoint_path = "{checkpoint}/checkpoint_{machine}_{_id}.pt".format(checkpoint=param["checkpoint_directory"], machine=machine, _id=_id)
-            decision_function_path = "{model}/decision_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
 
             if mode:
                 if os.path.exists(model_file_path):
@@ -343,11 +298,12 @@ if __name__ == "__main__":
 
                 #train_loss_list = []
                 
-                extractor = load_extractor(int(param['tdim']))
+                extractor = ASTModel(input_tdim=int(param['tdim']), audioset_pretrain=True)
                 extractor = extractor.to(device=device_1)
 
                 flow_model = FastFlow(flow_steps=int(param['NF_layers']))
                 flow_model = flow_model.to(device=device_1)
+                flow_model = flow_model.float()
 
                 # set up training info
                 optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
@@ -368,44 +324,50 @@ if __name__ == "__main__":
                         com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
                         com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
 
+                        # auc, p_auc = test_one_epoch(extractor=extractor, flow_model=flow_model, val_dl=test_dl, file_list=test_list, fpr=param['max_fpr'])
+                            
+                        # com.logger.info("AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
+                        # com.logger.info("pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc))
+
                         if auc >= original_auc and p_auc >= original_pauc:
+                        # if p_auc >= original_pauc:
                             torch.save({
-                                'model_state_dict': flow_model.state_dict(),
+                                'ast_state_dict': extractor.state_dict(),
+                                'flow_state_dict': flow_model.state_dict(),
                                 'optimizer_state_dict': optimizer.state_dict(),
                                 'epoch': epoch
                                 }, checkpoint_path
                             )
 
                             original_auc, original_pauc = auc, p_auc
-
+                            print()
                         else:
                             checkpoint = torch.load(checkpoint_path)
 
+                            extractor = ASTModel(input_tdim=int(param['tdim']), audioset_pretrain=True)
+                            extractor.load_state_dict(checkpoint['ast_state_dict'])
+                            extractor = extractor.to(device=device_1)
+
                             flow_model = FastFlow(flow_steps=int(param['NF_layers']))
-                            flow_model.load_state_dict(checkpoint['model_state_dict'])
+                            flow_model.load_state_dict(checkpoint['flow_state_dict'])
                             flow_model = flow_model.to(device=device_1)
 
                             optimizer = torch.optim.Adam(flow_model.parameters(), lr=1e-4)
                             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
-                            print("Reloading Model from epoch {ep}".format(ep=checkpoint['epoch']))
-                
+                            print("Reloading Model from epoch {ep}\n".format(ep=checkpoint['epoch']))
 
                 torch.save({
-                    'model_state_dict': flow_model.state_dict(),
+                    'ast_state_dict': extractor.state_dict(),
+                    'flow_state_dict': flow_model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
                     'epoch': epochs
                     }, model_file_path
                 )
 
-                decision_function = find_threshold(extractor=extractor, flow_model=flow_model, val_dl=val_dl, file_list=val_list)
-                tree.plot_tree(decision_function)
-                pickle.dump(decision_function, open(decision_function_path, 'wb'))
-                
                 com.logger.info("save_model -> {}".format(model_file_path))
 
-                # del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
-                del train_dataset, val_dataset, train_dl, val_dl
+                del train_dataset, val_dataset, train_dl, val_dl, flow_model, extractor
 
                 gc.collect()
                 torch.cuda.empty_cache()
@@ -420,26 +382,31 @@ if __name__ == "__main__":
             anomaly_score_csv = "{result}/anomaly_score_{machine}_{_id}.csv".format(result=param["result_directory"],
                                                                                      machine=machine,
                                                                                      _id=_id)
-            
-            test_extractor = load_extractor(int(param['tdim']))
-            test_extractor = extractor.to(device=device_1)
 
-            test_model = torch.load(checkpoint_path)
+            test_model = torch.load(model_file_path)
+
+            test_extractor = ASTModel(input_tdim=int(param['tdim']), audioset_pretrain=True)
+            test_extractor.load_state_dict(test_model['ast_state_dict'])
+            test_extractor = test_extractor.to(device=device_1)
+            test_extractor = test_extractor.float()
+            test_extractor.eval()
 
             test_flow_model = FastFlow(flow_steps=int(param['NF_layers']))
-            test_flow_model.load_state_dict(test_model['model_state_dict'])
-            test_flow_model = flow_model.to(device=device_1)
-
-            test_decision_function = pickle.load(open(decision_function_path, 'rb'))
+            test_flow_model.load_state_dict(test_model['flow_state_dict'])
+            test_flow_model = test_flow_model.to(device=device_1)
+            test_flow_model = test_flow_model.float()
+            test_flow_model.eval()
 
             auc, p_auc = record_csv(extractor=test_extractor, flow_model=test_flow_model, test_dl=test_dl, file_list=test_list, anomaly_score_csv=anomaly_score_csv, 
-                                    anomaly_num=test_dataset.anomaly_num, normal_num=test_dataset.normal_num, fpr=param['max_fpr'], decision_function=test_decision_function)
+                                    anomaly_num=test_dataset.anomaly_num, normal_num=test_dataset.normal_num, fpr=param['max_fpr'])
                 
             com.logger.info("Final AUC of {machine} {_id}: {auc}".format(machine=machine, _id=_id, auc=auc))
             com.logger.info("Final pAUC of {machine} {_id}: {p_auc}".format(machine=machine, _id=_id, p_auc=p_auc)) 
             com.logger.info("anomaly score result ->  {}".format(anomaly_score_csv))
 
-            del test_dataset, test_dl, flow_model, extractor
+            del test_dataset, test_dl, test_flow_model, test_extractor
+            # del extractor, flow_model, test_extractor, test_model, train_dataset, train_dl, \
+            #     val_dataset, val_dl, test_dataset, test_dl
 
             gc.collect()
             torch.cuda.empty_cache()
