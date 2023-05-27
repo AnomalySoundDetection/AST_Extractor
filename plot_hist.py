@@ -69,16 +69,16 @@ def plot_anomaly_map(anomaly_map, img_path):
 
     del anomaly_map
 
-def plot_stat(anomaly_map, img_path):
+def plot_stat(targets_np, outputs_np, img_path):
     
-    anomaly_map = anomaly_map.reshape(shape=(-1, 1))
-    anomaly_map_stat = anomaly_map.cpu().numpy()
-    fig, ax = plt.subplots(figsize=(15, 10))
-    ax.hist(anomaly_map_stat, bins=256, range=(0, 2))
+    targets_np = np.array(targets_np)
+    outputs_np = np.array(outputs_np)
+    
+    fig, ax = plt.subplots(figsize=(10, 7))
+    ax.hist(outputs_np[np.where(targets_np==0)], bins=np.arange(-0.8, -0.3, 0.005), color='r', alpha=0.5)
+    ax.hist(outputs_np[np.where(targets_np==1)], bins=np.arange(-0.8, -0.3, 0.005), color='g', alpha=0.5)
     plt.savefig(img_path)
     plt.close()
-
-    del anomaly_map
 
 ########################################################################
 # Visualize
@@ -105,25 +105,30 @@ def visualize_one_epoch(extractor, flow_model, test_dl, file_list, fpr, folder):
 
             log_prob = -torch.mean(output**2, dim=1) * 0.5
             
-            plot_log_prob = -log_prob
-            #anomaly_map = -torch.exp(log_prob)
+            #plot_log_prob = -log_prob
+            #prob = torch.exp(log_prob)
             #plot_log_prob = plot_log_prob.reshape(shape=(plot_log_prob.shape[1], plot_log_prob.shape[2]))
             #plot_log_prob = plot_log_prob.transpose(1, 0)
             #print(plot_log_prob.shape)
 
-            img_path = folder + '/' + file_list[idx].split("/")[-1][:-4] + '.png'
+            #img_path = folder + '/' + file_list[idx].split("/")[-1][:-4] + '.png'
             # print("img_path: {img_path}".format(img_path=img_path))
             
             #plot_log_prob = plot_log_prob.numpy()
-            plot_anomaly_map(anomaly_map=plot_log_prob, img_path=img_path)
+            #plot_anomaly_map(anomaly_map=plot_log_prob, img_path=img_path)
             
             #plot_anomaly_map(anomaly_map=anomaly_map, img_path=img_path)
             #plot_stat(anomaly_map=plot_log_prob, img_path=img_path)
+            
 
             log_prob = log_prob.reshape(shape=(1, -1)) 
             sorted_log_prob, _ = torch.sort(log_prob)
+            
+            # prob = prob.reshape(shape=(1, -1))
+            # sorted_anomaly_map, _ = torch.sort(prob)
     
             anomaly_score = -torch.mean(sorted_log_prob[:100])
+            #anomaly_score = -torch.exp(prob)
             #anomaly_score = -log_prob
     
             ground_truth_list[idx] = ground_truth.item()
@@ -133,6 +138,9 @@ def visualize_one_epoch(extractor, flow_model, test_dl, file_list, fpr, folder):
             #     weight[idx] = anomaly_num / len(file_list)
             # else:
             #     weight[idx] = normal_num / len(file_list)
+    
+    img_path = folder + '/' + 'hist' + '.png'
+    plot_stat(ground_truth_list, anomaly_score_list, img_path)
 
     auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list)
     p_auc = metrics.roc_auc_score(ground_truth_list, anomaly_score_list, max_fpr=fpr)
@@ -155,7 +163,7 @@ if __name__ == "__main__":
     param = com.load_yaml()
         
     # make output directory
-    visual_folder = "./visual"
+    visual_folder = "./visual_hist"
     #visual_folder = "./visual_stat"
 
     os.makedirs(visual_folder, exist_ok=True)

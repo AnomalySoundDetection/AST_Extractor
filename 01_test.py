@@ -173,7 +173,7 @@ if __name__ == "__main__":
 
             print("------ DONE -------")
             
-            model_file_path = "{model}/model_{machine}_{_id}.pt".format(model=param["model_directory"], machine=machine, _id=_id)
+            model_file_path = "{model}/model_{machine}_{_id}.pt".format(model="./model_100", machine=machine, _id=_id)
             checkpoint_path = "{checkpoint}/checkpoint_{machine}_{_id}.pt".format(checkpoint=param["checkpoint_directory"], machine=machine, _id=_id)
             #history_img = "{model}/history_{machine}_{_id}.png".format(model=param["model_directory"], machine=machine, _id=_id)
 
@@ -235,9 +235,9 @@ if __name__ == "__main__":
                     anomaly_score_list[idx] = anomaly_score.item()
 
                     if ground_truth.item() == 1:
-                        weight[idx] = anomaly_num / len(file_list)
+                        weight[idx] = 1 / anomaly_num
                     else:
-                        weight[idx] = normal_num / len(file_list)
+                        weight[idx] = 1 / normal_num
 
                     anomaly_score_record.append([os.path.basename(file_list[idx]), anomaly_score.item()])
 
