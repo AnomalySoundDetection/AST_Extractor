@@ -106,7 +106,7 @@ def visualize_one_epoch(extractor, flow_model, test_dl, file_list, fpr, folder):
             log_prob = -torch.mean(output**2, dim=1) * 0.5
             
             #plot_log_prob = -log_prob
-            #prob = torch.exp(log_prob)
+            prob = torch.exp(log_prob)
             #plot_log_prob = plot_log_prob.reshape(shape=(plot_log_prob.shape[1], plot_log_prob.shape[2]))
             #plot_log_prob = plot_log_prob.transpose(1, 0)
             #print(plot_log_prob.shape)
@@ -121,15 +121,16 @@ def visualize_one_epoch(extractor, flow_model, test_dl, file_list, fpr, folder):
             #plot_stat(anomaly_map=plot_log_prob, img_path=img_path)
             
 
-            log_prob = log_prob.reshape(shape=(1, -1)) 
-            sorted_log_prob, _ = torch.sort(log_prob)
+            #log_prob = log_prob.reshape(shape=(1, -1)) 
+            #sorted_log_prob, _ = torch.sort(log_prob)
             
-            # prob = prob.reshape(shape=(1, -1))
-            # sorted_anomaly_map, _ = torch.sort(prob)
+            prob = prob.reshape(shape=(1, -1))
+            sorted_prob, _ = torch.sort(prob)
+            anomaly_score = -torch.mean(sorted_prob[:100])
     
-            anomaly_score = -torch.mean(sorted_log_prob[:100])
+            #anomaly_score = -torch.mean(sorted_log_prob[:100])
             #anomaly_score = -torch.exp(prob)
-            #anomaly_score = -log_prob
+            #anomaly_score = -prob
     
             ground_truth_list[idx] = ground_truth.item()
             anomaly_score_list[idx] = anomaly_score.item()
