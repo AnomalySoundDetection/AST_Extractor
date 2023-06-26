@@ -48,11 +48,14 @@ class ASTModel(nn.Module):
     def __init__(self, label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrain=True, audioset_pretrain=False, model_size='base384', verbose=True):
 
         super(ASTModel, self).__init__()
+        
+        os.environ['TORCH_HOME'] = './'
+
         assert timm.__version__ == '0.4.5', 'Please use timm == 0.4.5, the code might not be compatible with newer versions.'
 
-        if verbose == True:
-            print('---------------AST Model Summary---------------')
-            print('ImageNet pretraining: {:s}, AudioSet pretraining: {:s}'.format(str(imagenet_pretrain),str(audioset_pretrain)))
+        #if verbose == True:
+        #    print('---------------AST Model Summary---------------')
+        #    print('ImageNet pretraining: {:s}, AudioSet pretraining: {:s}'.format(str(imagenet_pretrain),str(audioset_pretrain)))
         # override timm input shape restriction
         timm.models.vision_transformer.PatchEmbed = PatchEmbed
 
@@ -77,9 +80,10 @@ class ASTModel(nn.Module):
             f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
             num_patches = f_dim * t_dim
             self.v.patch_embed.num_patches = num_patches
-            if verbose == True:
-                print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
-                print('number of patches={:d}'.format(num_patches))
+            
+            #if verbose == True:
+            #    print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
+            #    print('number of patches={:d}'.format(num_patches))
 
             # the linear projection layer
             new_proj = torch.nn.Conv2d(1, self.original_embedding_dim, kernel_size=(16, 16), stride=(fstride, tstride))
@@ -96,12 +100,12 @@ class ASTModel(nn.Module):
                 if t_dim <= self.oringal_hw:
                     new_pos_embed = new_pos_embed[:, :, :, int(self.oringal_hw / 2) - int(t_dim / 2): int(self.oringal_hw / 2) - int(t_dim / 2) + t_dim]
                 else:
-                    new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(self.oringal_hw, t_dim), mode='bilinear')
+                    new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(self.oringal_hw, t_dim), mode='bilinear', align_corners=False)
                 # cut (from middle) or interpolate the first dimension of the positional embedding
                 if f_dim <= self.oringal_hw:
                     new_pos_embed = new_pos_embed[:, :, int(self.oringal_hw / 2) - int(f_dim / 2): int(self.oringal_hw / 2) - int(f_dim / 2) + f_dim, :]
                 else:
-                    new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+                    new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear', align_corners=False)
                 # flatten the positional embedding
                 new_pos_embed = new_pos_embed.reshape(1, self.original_embedding_dim, num_patches).transpose(1,2)
                 # concatenate the above positional embedding with the cls token and distillation token of the deit model.
@@ -119,26 +123,33 @@ class ASTModel(nn.Module):
                 raise ValueError('currently model pretrained on only audioset is not supported, please set imagenet_pretrain = True to use audioset pretrained model.')
             if model_size != 'base384':
                 raise ValueError('currently only has base384 AudioSet pretrained model.')
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            if os.path.exists('../pretrained_models/audioset_10_10_0.4593.pth') == False:
+            #device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
+            
+            if os.path.exists('./audioset_10_10_0.4593.pth') == False:
                 # this model performs 0.4593 mAP on the audioset eval set
                 audioset_mdl_url = 'https://www.dropbox.com/s/cv4knew8mvbrnvq/audioset_0.4593.pth?dl=1'
-                wget.download(audioset_mdl_url, out='../pretrained_models/audioset_10_10_0.4593.pth')
-            sd = torch.load('../pretrained_models/audioset_10_10_0.4593.pth', map_location=device)
+                wget.download(audioset_mdl_url, out='./audioset_10_10_0.4593.pth')
+            
+            sd = torch.load('./audioset_10_10_0.4593.pth')
             audio_model = ASTModel(label_dim=527, fstride=10, tstride=10, input_fdim=128, input_tdim=1024, imagenet_pretrain=False, audioset_pretrain=False, model_size='base384', verbose=False)
-            audio_model = torch.nn.DataParallel(audio_model)
+            
+            # Can modify output_device later
+            #audio_model = torch.nn.DataParallel(audio_model, output_device=0)
             audio_model.load_state_dict(sd, strict=False)
-            self.v = audio_model.module.v
+            
+            #self.v = audio_model.module.v
+            self.v = audio_model.v
             self.original_embedding_dim = self.v.pos_embed.shape[2]
-            print("embedding size: ", self.original_embedding_dim)
+            #print("embedding size: ", self.original_embedding_dim)
             self.mlp_head = nn.Sequential(nn.LayerNorm(self.original_embedding_dim), nn.Linear(self.original_embedding_dim, label_dim))
 
             f_dim, t_dim = self.get_shape(fstride, tstride, input_fdim, input_tdim)
             num_patches = f_dim * t_dim
             self.v.patch_embed.num_patches = num_patches
-            if verbose == True:
-                print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
-                print('number of patches={:d}'.format(num_patches))
+            
+            #if verbose == True:
+            #    print('frequncey stride={:d}, time stride={:d}'.format(fstride, tstride))
+            #    print('number of patches={:d}'.format(num_patches))
 
             new_pos_embed = self.v.pos_embed[:, 2:, :].detach().reshape(1, 1212, 768).transpose(1, 2).reshape(1, 768, 12, 101)
             # if the input sequence length is larger than the original audioset (10s), then cut the positional embedding
@@ -146,12 +157,13 @@ class ASTModel(nn.Module):
                 new_pos_embed = new_pos_embed[:, :, :, 50 - int(t_dim/2): 50 - int(t_dim/2) + t_dim]
             # otherwise interpolate
             else:
-                new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear')
+                new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(12, t_dim), mode='bilinear', align_corners=False)
             if f_dim < 12:
                 new_pos_embed = new_pos_embed[:, :, 6 - int(f_dim/2): 6 - int(f_dim/2) + f_dim, :]
             # otherwise interpolate
             elif f_dim > 12:
-                new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear')
+                new_pos_embed = torch.nn.functional.interpolate(new_pos_embed, size=(f_dim, t_dim), mode='bilinear', align_corners=False)
+
             new_pos_embed = new_pos_embed.reshape(1, 768, num_patches).transpose(1, 2)
             self.v.pos_embed = nn.Parameter(torch.cat([self.v.pos_embed[:, :2, :].detach(), new_pos_embed], dim=1))
 
@@ -197,10 +209,23 @@ class ASTModel(nn.Module):
         for blk in self.v.blocks:
             x = blk(x)
 
-        #print("Size of x after going through all blocks in transformer is ", x.shape)
-
         x = self.v.norm(x)
-        x = (x[:, 0] + x[:, 1]) / 2
+        #print("Size of x after going through all blocks in transformer is ", x.shape)
+        B, _, C = x.shape
+
+        x = x[:, 2: ,:]
+
+        #print("Size of x after taking out token in transformer is ", x.shape)
+
+        '''
+        Vector size is 1210
+        Channel 768 vector 1210 resize 1024
+        resize 768 * 55 * 22
+        '''
+        x = torch.transpose(x, 1, 2)
+        x = torch.reshape(x, (B, C, 12, 101))
+        
+        #x = (x[:, 0] + x[:, 1]) / 2
         #print("Size of x after averaging is ", x.shape)
 
         """
@@ -214,12 +239,12 @@ class ASTModel(nn.Module):
 ################################################################
 # Load Pretrain Model
 ################################################################
-def load_extractor():
+def load_extractor(tdim):
     
     # download pretrained model in this directory
     os.environ['TORCH_HOME'] = './' 
     
     # create an AST model
-    extractor = ASTModel(audioset_pretrain=True)
+    extractor = ASTModel(input_tdim=tdim, audioset_pretrain=True)
 
     return extractor

@@ -1,8 +1,12 @@
-result/
-model/
+result*/
+model*/
 dev_data/
 model_idcae/
 runs/
+temp/
+checkpoint/
+tmp_result/
+visual*/
 *.pth
 # Byte-compiled / optimized / DLL files
 __pycache__/

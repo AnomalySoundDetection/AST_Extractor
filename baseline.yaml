@@ -1,9 +1,18 @@
-dev_directory : /mnt/Directory/dev_data
+dev_directory : /mnt/HDD2/ASD_team/dev_data
 model_directory: ./model
+checkpoint_directory: ./checkpoint
 result_directory: ./result
 result_file: result.csv
+decision_function_directory: ./decision
 
 max_fpr : 0.1
+
+latent_size: 768
+NF_layers: 16
+tdim: 1024
+frame_length: 25
+shift_length: 10
+channel: 768
 
 feature:
   n_mels: 64
@@ -13,5 +22,5 @@ feature:
   fmax: 16000
 
 fit:
-  epochs : 100
-  batch_size : 16
+  epochs : 200
+  batch_size : 4
